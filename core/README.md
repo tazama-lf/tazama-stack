@@ -8,7 +8,7 @@
 - [1. INTRODUCTION](#1-introduction)
 - [2. PRE-REQUISITES](#2-pre-requisites)
 - [3. INSTALLATION STEPS](#3-installation-steps)
-  - [3.1. Clone the Full-Stack-Docker-Tazama repository to your local machine](#31-clone-the-full-stack-docker-tazama-repository-to-your-local-machine)
+  - [3.1. Clone the tazama-stack repository to your local machine](#31-clone-the-tazama-stack-repository-to-your-local-machine)
   - [3.2. Using the Tazama installation script for menu-driven deployment](#32-using-the-tazama-installation-script-for-menu-driven-deployment)
   - [3.3. Interacting with your deployment via Postman](#33-interacting-with-your-deployment-via-postman)
   - [3.4. Docker utilities](#34-docker-utilities)
@@ -70,12 +70,12 @@ Instructions for installing the dependencies and setting up the GH_TOKEN environ
 
 # 3. INSTALLATION STEPS
 
-## 3.1. Clone the Full-Stack-Docker-Tazama repository to your local machine  
+## 3.1. Clone the tazama-stack repository to your local machine  
 
 In a Windows Command prompt, navigate to the folder where you want to store a copy of the source code. For example, the source code root folder path I have been using to compile this guide is `C:\Tazama\GitHub`. Once in your source code root folder, clone (copy) the repository with the following command:
 
 ```
-git clone https://github.com/tazama-lf/Full-Stack-Docker-Tazama -b main
+git clone https://github.com/tazama-lf/tazama-stack -b main
 ```
 
 If you would like to deploy the system from the `dev` branch, replace `main` above with `dev`. The `main` branch is the most recent official release of the system, while `dev` will be new features not yet released to the main branch.
@@ -83,8 +83,8 @@ If you would like to deploy the system from the `dev` branch, replace `main` abo
 **Output:**
 
 ```text
-C:\Tazama\GitHub>git clone https://github.com/tazama-lf/Full-Stack-Docker-Tazama
-Cloning into 'Full-Stack-Docker-Tazama'...
+C:\Tazama\GitHub>git clone https://github.com/tazama-lf/tazama-stack
+Cloning into 'tazama-stack'...
 remote: Enumerating objects: 1353, done.
 remote: Counting objects: 100% (578/578), done.
 remote: Compressing objects: 100% (291/291), done.
@@ -99,7 +99,7 @@ C:\Tazama\GitHub>
 
 First, start the Docker Desktop for Windows application.
 
-With Docker Desktop running: from your Windows Command prompt and from inside the `Full-Stack-Docker-Tazama` folder, execute the following command and follow the prompts:
+With Docker Desktop running: from your Windows Command prompt and from inside the `tazama-stack` folder, execute the following command and follow the prompts:
 
 **Windows**  
  - Command prompt: `tazama.bat` 
@@ -136,19 +136,19 @@ We'll talk more about options `5`, `6`, and `7` a little later.
 
 This option deploys Tazama from publicly available repositories on the [Tazama Public GitHub](https://github.com/tazama-lf).
 
-You can specify the specific branches for specific components you want to deploy by updating the `Full-Stack-Docker-Tazama/.env` and changing the default branch specified for the component.
+You can specify the specific branches for specific components you want to deploy by updating the `tazama-stack/.env` and changing the default branch specified for the component.
 
-Navigate to the Full-Stack-Docker-Tazama folder and launch VS Code:
+Navigate to the tazama-stack folder and launch VS Code:
 
 **Output:**
 
 ```text
-C:\Tazama\GitHub>cd Full-Stack-Docker-Tazama
+C:\Tazama\GitHub>cd tazama-stack
 
-C:\Tazama\GitHub\Full-Stack-Docker-Tazama>code .
+C:\Tazama\GitHub\tazama-stack>code .
 ```
 
-In VS Code, open the .env file in the Full-Stack-Docker-Tazama folder and update the branches in the `.env` file for these services as required:
+In VS Code, open the .env file in the tazama-stack folder and update the branches in the `.env` file for these services as required:
 
 ```ini
 # Branches
@@ -171,26 +171,26 @@ AUTH_SERVICE_BRANCH=main
 EVENT_FLOW_BRANCH=main
 ```
 
-The `.env` file is configured to deploy services out of the same Tazama branch as the current selected branch of the cloned `Full-Stack-Docker-Tazama` repository.
+The `.env` file is configured to deploy services out of the same Tazama branch as the current selected branch of the cloned `tazama-stack` repository.
 
 ### 2. Public (DockerHub)
 This option facilitates a public deployment of only the basic core services and a single sample rule-901 processor using pre-built images published on DockerHub. This option is similar to option 1 but instead of building the images from the GitHub source code that are then compiled locally, the deployment is from DockerHub images.
 
 The [tazamaorg DockerHub](https://hub.docker.com/u/tazamaorg) contains pre-built images from both the GitHub `dev` branch as release candidate `rc` images and from the GitHub `main` branch as final release `latest` images.
 
-To select which of these images to deploy, you can edit the `Full-Stack-Docker-Tazama/.env` file and update the `TAZAMA_VERSION` environment variable to either `rc` or `latest`, or a specific version, such as `3.0.0`.
+To select which of these images to deploy, you can edit the `tazama-stack/.env` file and update the `TAZAMA_VERSION` environment variable to either `rc` or `latest`, or a specific version, such as `3.0.0`.
 
-The `.env` file is configured to deploy services out of the same images that are associated with Tazama branch as the current selected branch of the cloned `Full-Stack-Docker-Tazama` repository (`rc` for `dev` and `latest` for `main`).
+The `.env` file is configured to deploy services out of the same images that are associated with Tazama branch as the current selected branch of the cloned `tazama-stack` repository (`rc` for `dev` and `latest` for `main`).
 
 ### 3. Full-service (DockerHub)
 This option facilitates a public "full-service" deployment of the basic core services and all Tazama rule processors using pre-built images published on DockerHub. The rule processors are configured with a basic non-descript configuration and composed into a single illustrative typology.
 
-As with the Public (DockerHub) deployment above, you also have the ability to choose an `rc` or `latest` release deployment by updating the `Full-Stack-Docker-Tazama/.env` file.
+As with the Public (DockerHub) deployment above, you also have the ability to choose an `rc` or `latest` release deployment by updating the `tazama-stack/.env` file.
 
 ### 4. Multi-Tenant Public (DockerHub)
 This option allows the deployment of an example multi-tenant instance of Tazama based on the Public (DockerHub) deployment for two separate tenants: tenant-001 and tenant-002. Each tenant has its own separate configurations, and authentication set up via KeyCloak to access the system fully segregated.
 
-As with the Public (DockerHub) deployment above, you also have the ability to choose an `rc` or `latest` release deployment by updating the `Full-Stack-Docker-Tazama/.env` file.
+As with the Public (DockerHub) deployment above, you also have the ability to choose an `rc` or `latest` release deployment by updating the `tazama-stack/.env` file.
 
 > [!NOTE]
 > The Tazama Demo UI is not currently available for this deployment scenario.
@@ -644,14 +644,14 @@ If you want your exported realm to be loaded in the Tazama full-stack when a new
 
 `auth/keycloak/realms/00-tazama-test-realm.json`
 
-in your `full-stack-docker-tazama` repository folder, or you must update the volume string in the `docker-compose.base.auth.yaml` file, for example:
+in your `tazama-stack` repository folder, or you must update the volume string in the `docker-compose.base.auth.yaml` file, for example:
 
 ```yaml
     volumes:
       - ./tazama-realm-export.json:/opt/keycloak/data/import/00-tazama-test-realm.json
 ```
 
-(This change assumes you exported the new realm to the root of the `full-stack-docker-tazama` repository folder.)
+(This change assumes you exported the new realm to the root of the `tazama-stack` repository folder.)
 
 <div style="text-align: right"><a href="#top">Top</a></div>
 
