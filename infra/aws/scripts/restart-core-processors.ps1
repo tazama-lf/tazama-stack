@@ -8,7 +8,7 @@
     Docker Compose services on Server A (tazama-core) and, for each one, pulls the
     latest image from DockerHub and recreates the container in place.
 
-    No full-stack-docker-tazama repo pull is performed (RepoPull stays 'none'), so
+    No tazama-stack repo pull is performed (RepoPull stays 'none'), so
     the code already on the server is used unchanged - only the container images are
     refreshed from DockerHub.
 

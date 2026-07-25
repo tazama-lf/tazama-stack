@@ -45,7 +45,7 @@ Each stack can be deployed independently on the same machine for local developme
 # 2. REPOSITORY STRUCTURE
 
 ```
-full-stack-docker-tazama/
+tazama-stack/
 |-- core/               Core stack -- TMS, processors, rules, Keycloak, PostgreSQL, NATS, Valkey
 |-- extensions/         Extensions stack -- TCS, TRS, CMS, OpenSearch, SFTP, CouchDB, Flowable
 |-- biar/               BIAR stack -- NiFi, Ozone, Solr, Tika
@@ -184,8 +184,8 @@ For the AWS deployment you will additionally need:
 
 ```powershell
 # Clone the repository
-git clone https://github.com/tazama-lf/full-stack-docker-tazama -b main
-cd full-stack-docker-tazama
+git clone https://github.com/tazama-lf/tazama-stack -b main
+cd tazama-stack
 
 # Start Docker Desktop, then deploy the core stack
 cd core

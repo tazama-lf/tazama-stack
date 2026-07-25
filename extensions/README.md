@@ -308,8 +308,8 @@ TCS and TRS validate incoming JWT tokens using an RSA public key. The key pair i
 If you are deploying on separate machines (Server A and Server B), you must manually copy the file from Server A to Server B before starting the extensions stack:
 
 ```
-scp <server-a>:/<path>/full-stack-docker-tazama/core/auth/test-public-key.pem \
-    ./<path>/full-stack-docker-tazama/extensions/auth/test-public-key.pem
+scp <server-a>:/<path>/tazama-stack/core/auth/test-public-key.pem \
+    ./<path>/tazama-stack/extensions/auth/test-public-key.pem
 ```
 
 In the AWS deployment, the deploy scripts handle this step automatically -- see [infra/aws/aws-deployment-instructions.md](../infra/aws/aws-deployment-instructions.md) Section D.3.

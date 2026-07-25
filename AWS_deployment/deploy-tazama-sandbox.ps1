@@ -182,7 +182,7 @@ systemctl start docker
 usermod -aG docker ec2-user
 
 # Clone the repo (main branch = latest stable release)
-git clone https://github.com/tazama-lf/Full-Stack-Docker-Tazama -b main /opt/tazama
+git clone https://github.com/tazama-lf/tazama-stack -b main /opt/tazama
 
 # Write .env with placeholder values.
 # IMPORTANT: Update GH_TOKEN before running deploy-tazama.sh.
