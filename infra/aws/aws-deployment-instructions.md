@@ -123,7 +123,7 @@ Before starting, you need:
 | Windows workstation | PowerShell 5.1+ or PowerShell 7. All scripts are `.ps1`. |
 | AWS account | With an IAM user or role that has permissions to create EC2, VPC, Route 53, ALB, SSM, S3, and DynamoDB resources |
 | Docker Desktop | For local testing only - not required for the cloud deploy itself |
-| `full-stack-docker-tazama` repo | Cloned locally. All commands in this guide assume the repo root is your working directory unless stated otherwise. |
+| `tazama-stack` repo | Cloned locally. All commands in this guide assume the repo root is your working directory unless stated otherwise. |
 
 All other required tools (AWS CLI, Git, OpenSSH, OpenTofu) are installed as part of Phase B.
 
@@ -134,7 +134,7 @@ All other required tools (AWS CLI, Git, OpenSSH, OpenTofu) are installed as part
 Three stacks are deployed across three EC2 instances. Each stack maps to a subfolder of the repo:
 
 ```
-full-stack-docker-tazama/
+tazama-stack/
 ├── core/          →  Server A - tazama-core (NATS, PostgreSQL, Valkey, TMS, rules, TP, auth, relay)
 ├── extensions/    →  Server B - tazama-extensions (OpenSearch, CMS, TCS, TRS, SFTP)
 └── biar/          →  Server C - tazama-biar (NiFi, Solr, Tika, Apache Ozone, JupyterHub)
@@ -143,7 +143,7 @@ full-stack-docker-tazama/
 The IaC and deploy scripts live in a subfolder that must be created as part of Phase C:
 
 ```
-full-stack-docker-tazama/
+tazama-stack/
 └── infra/
     └── aws/
         ├── main.tf
@@ -255,7 +255,7 @@ Three private EC2 instances sit behind an Application Load Balancer. No instance
 
 ## Phase A: Compose File Changes Required Before AWS Deployment
 
-These are code changes to the `full-stack-docker-tazama` repo that must be applied before the stacks can run correctly on separate machines. On a single machine (local dev), Docker networks span all stacks automatically - on separate EC2 instances they do not.
+These are code changes to the `tazama-stack` repo that must be applied before the stacks can run correctly on separate machines. On a single machine (local dev), Docker networks span all stacks automatically - on separate EC2 instances they do not.
 
 **All Phase A items are complete.** They are documented here so community contributors understand what was changed and why.
 
@@ -704,8 +704,8 @@ on windows_amd64
 ### B.5 - Clone the repository
 
 ```powershell
-git clone https://github.com/tazama-lf/full-stack-docker-tazama.git
-cd full-stack-docker-tazama
+git clone https://github.com/tazama-lf/tazama-stack.git
+cd tazama-stack
 ```
 
 All subsequent Phase B-E commands assume this directory as the working directory unless stated otherwise.
@@ -1057,7 +1057,7 @@ anything is created.
 ### C.1 Folder structure
 
 The IaC files live inside the cloned repo.
-All paths are relative to `full-stack-docker-tazama\infra\aws\`.
+All paths are relative to `tazama-stack\infra\aws\`.
 
 ```
 infra/aws/
@@ -1107,9 +1107,9 @@ The EICE SG allows only outbound TCP 22 to `10.0.1.0/24`; each instance SG
 allows port 22 only from that EICE SG.
 
 Files created:
-- [infra/aws/modules/vpc/variables.tf](full-stack-docker-tazama/infra/aws/modules/vpc/variables.tf)
-- [infra/aws/modules/vpc/main.tf](full-stack-docker-tazama/infra/aws/modules/vpc/main.tf)
-- [infra/aws/modules/vpc/outputs.tf](full-stack-docker-tazama/infra/aws/modules/vpc/outputs.tf)
+- [infra/aws/modules/vpc/variables.tf](tazama-stack/infra/aws/modules/vpc/variables.tf)
+- [infra/aws/modules/vpc/main.tf](tazama-stack/infra/aws/modules/vpc/main.tf)
+- [infra/aws/modules/vpc/outputs.tf](tazama-stack/infra/aws/modules/vpc/outputs.tf)
 
 ---
 
@@ -1184,9 +1184,9 @@ Four security groups. EC2 instances have **no internet-facing inbound rules** - 
 > `sg-tazama-eice` is a small separate security group attached to the EICE VPC endpoint itself. It has no inbound rules; outbound allows TCP port 22 to `10.0.1.0/24` only. Each instance SG allows port 22 from this EICE SG only - not from the internet.
 
 Files created:
-- [infra/aws/modules/security-groups/variables.tf](full-stack-docker-tazama/infra/aws/modules/security-groups/variables.tf)
-- [infra/aws/modules/security-groups/main.tf](full-stack-docker-tazama/infra/aws/modules/security-groups/main.tf)
-- [infra/aws/modules/security-groups/outputs.tf](full-stack-docker-tazama/infra/aws/modules/security-groups/outputs.tf)
+- [infra/aws/modules/security-groups/variables.tf](tazama-stack/infra/aws/modules/security-groups/variables.tf)
+- [infra/aws/modules/security-groups/main.tf](tazama-stack/infra/aws/modules/security-groups/main.tf)
+- [infra/aws/modules/security-groups/outputs.tf](tazama-stack/infra/aws/modules/security-groups/outputs.tf)
 
 ---
 
@@ -1206,9 +1206,9 @@ Notable settings:
   bootstrap GH_TOKEN fetch); no credentials in `user_data`
 
 Files created:
-- [infra/aws/modules/ec2/variables.tf](full-stack-docker-tazama/infra/aws/modules/ec2/variables.tf)
-- [infra/aws/modules/ec2/main.tf](full-stack-docker-tazama/infra/aws/modules/ec2/main.tf)
-- [infra/aws/modules/ec2/outputs.tf](full-stack-docker-tazama/infra/aws/modules/ec2/outputs.tf)
+- [infra/aws/modules/ec2/variables.tf](tazama-stack/infra/aws/modules/ec2/variables.tf)
+- [infra/aws/modules/ec2/main.tf](tazama-stack/infra/aws/modules/ec2/main.tf)
+- [infra/aws/modules/ec2/outputs.tf](tazama-stack/infra/aws/modules/ec2/outputs.tf)
 
 ---
 
@@ -1228,15 +1228,15 @@ servers by name, not IP - the IP is fixed anyway, but names survive a `tofu dest
 → re-apply cycle.
 
 Files created:
-- [infra/aws/modules/dns/variables.tf](full-stack-docker-tazama/infra/aws/modules/dns/variables.tf)
-- [infra/aws/modules/dns/main.tf](full-stack-docker-tazama/infra/aws/modules/dns/main.tf)
-- [infra/aws/modules/dns/outputs.tf](full-stack-docker-tazama/infra/aws/modules/dns/outputs.tf)
+- [infra/aws/modules/dns/variables.tf](tazama-stack/infra/aws/modules/dns/variables.tf)
+- [infra/aws/modules/dns/main.tf](tazama-stack/infra/aws/modules/dns/main.tf)
+- [infra/aws/modules/dns/outputs.tf](tazama-stack/infra/aws/modules/dns/outputs.tf)
 
 ---
 
 ### C.6 Bootstrap script template
 
-[infra/aws/templates/bootstrap.sh.tpl](full-stack-docker-tazama/infra/aws/templates/bootstrap.sh.tpl)
+[infra/aws/templates/bootstrap.sh.tpl](tazama-stack/infra/aws/templates/bootstrap.sh.tpl)
 is rendered by `templatefile()` in `main.tf` and passed as `user_data` to all
 three instances.
 
@@ -1247,8 +1247,8 @@ It runs once at first boot and:
    before Docker is installed so all containers inherit the limit from first start
 3. Installs Docker CE from the Amazon Linux 2023 dnf repo
 4. Installs the Docker Compose v2 plugin from GitHub releases
-5. Clones the `tazama-lf/full-stack-docker-tazama` repo to
-   `/home/ec2-user/full-stack-docker-tazama`
+5. Clones the `tazama-lf/tazama-stack` repo to
+   `/home/ec2-user/tazama-stack`
 6. Fetches `GH_TOKEN` from SSM Parameter Store (`/tazama/gh_token`) using
    the instance's IAM role - no credentials in user_data
 7. Writes `GH_TOKEN` to `/etc/environment` (available to all sessions)
@@ -1289,8 +1289,8 @@ value; without the overlay `SERVER_B_HOST` remains at the local-dev default
 `localhost`.
 
 Files created:
-- [infra/aws/templates/env-extensions.tpl](full-stack-docker-tazama/infra/aws/templates/env-extensions.tpl)
-- [infra/aws/templates/env-biar.tpl](full-stack-docker-tazama/infra/aws/templates/env-biar.tpl)
+- [infra/aws/templates/env-extensions.tpl](tazama-stack/infra/aws/templates/env-extensions.tpl)
+- [infra/aws/templates/env-biar.tpl](tazama-stack/infra/aws/templates/env-biar.tpl)
 
 `env-extensions.tpl` overrides include:
 
@@ -1310,7 +1310,7 @@ Files created:
 
 ### C.8 Root `main.tf` and `variables.tf`
 
-[infra/aws/main.tf](full-stack-docker-tazama/infra/aws/main.tf) ties everything together:
+[infra/aws/main.tf](tazama-stack/infra/aws/main.tf) ties everything together:
 
 - Backend block is **intentionally empty** (`backend "s3" {}`); the S3 config is
   supplied via `backend.conf` at `tofu init` time (keeps account IDs out of
@@ -1321,7 +1321,7 @@ Files created:
 - `locals { bootstrap = templatefile(...) }` renders the bootstrap script once and
   passes the same rendered string to all three `module "server_*"` calls.
 
-[infra/aws/variables.tf](full-stack-docker-tazama/infra/aws/variables.tf) -
+[infra/aws/variables.tf](tazama-stack/infra/aws/variables.tf) -
 only `key_name` is required; everything else has a sensible default.
 
 Key optional variables:
@@ -1332,17 +1332,17 @@ Key optional variables:
 | `instance_type_a` / `_b` | `t3.xlarge` | EC2 size for Server A and B |
 | `instance_type_c` | `r5.2xlarge` | EC2 size for Server C (Ozone needs memory) |
 
-[infra/aws/terraform.tfvars.example](full-stack-docker-tazama/infra/aws/terraform.tfvars.example)
+[infra/aws/terraform.tfvars.example](tazama-stack/infra/aws/terraform.tfvars.example)
 - copy to `terraform.tfvars` (gitignored) and set at minimum `key_name = "tazama-aws"`.
 
-[infra/aws/backend.conf.example](full-stack-docker-tazama/infra/aws/backend.conf.example)
+[infra/aws/backend.conf.example](tazama-stack/infra/aws/backend.conf.example)
 - copy to `backend.conf` (gitignored) and set the bucket name with your account ID.
 
 ---
 
 ### C.9 Root `outputs.tf`
 
-[infra/aws/outputs.tf](full-stack-docker-tazama/infra/aws/outputs.tf) surfaces
+[infra/aws/outputs.tf](tazama-stack/infra/aws/outputs.tf) surfaces
 the values the Phase D deploy scripts need: instance IDs, private IPs, and the
 EICE endpoint ID (used in the SSH `ProxyCommand`).
 
@@ -1353,7 +1353,7 @@ EICE endpoint ID (used in the SSH `ProxyCommand`).
 **Replace `<your-account-id>`** in the command below with your 12-digit AWS Account ID - the `Account` value from the `aws sts get-caller-identity` output in B.6 (e.g. `123456789012`). It is not the UserId or the Access Key ID.
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 
 # 1. terraform.tfvars - only key_name is required
 Copy-Item terraform.tfvars.example terraform.tfvars
@@ -1450,7 +1450,7 @@ authentication is entirely via the IAM profile on your local AWS CLI session.
 **To deploy everything in one go:**
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 .\deploy.ps1 -Password 'your-strong-password'
 ```
 
@@ -1474,7 +1474,7 @@ before moving on to the next. The runnable scripts are, in order:
 
 ### D.1 `helpers.ps1`
 
-[infra/aws/scripts/helpers.ps1](full-stack-docker-tazama/infra/aws/scripts/helpers.ps1)
+[infra/aws/scripts/helpers.ps1](tazama-stack/infra/aws/scripts/helpers.ps1)
 - shared functions. Dot-sourced by every other script.
 
 | Function | Purpose |
@@ -1501,7 +1501,7 @@ port 22 is exposed anywhere.
 
 ### D.2 `deploy-core.ps1`
 
-[infra/aws/scripts/deploy-core.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-core.ps1)
+[infra/aws/scripts/deploy-core.ps1](tazama-stack/infra/aws/scripts/deploy-core.ps1)
 
 1. Reads `server_a_instance_id` from `tofu output`
 2. Calls `Wait-Bootstrap` (polls up to 15 min for `.bootstrap-complete`)
@@ -1538,7 +1538,7 @@ docker compose -p tazama-core \
 
 ### D.3 `deploy-extensions.ps1`
 
-[infra/aws/scripts/deploy-extensions.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-extensions.ps1)
+[infra/aws/scripts/deploy-extensions.ps1](tazama-stack/infra/aws/scripts/deploy-extensions.ps1)
 
 1. **Server A** - applies `templates/env-extensions.tpl` overlay to `extensions/.env` (which arrives on the server via git pull):
    sets `SERVER_A_HOST=core.tazama.internal` and `SERVER_B_HOST=extensions.tazama.internal`.
@@ -1579,7 +1579,7 @@ docker compose -p tazama-core \
 
 ### D.4 `deploy-biar.ps1`
 
-[infra/aws/scripts/deploy-biar.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-biar.ps1)
+[infra/aws/scripts/deploy-biar.ps1](tazama-stack/infra/aws/scripts/deploy-biar.ps1)
 
 1. Waits for bootstrap on Server C (up to 15 min)
 2. Pulls the latest repo on Server C - ensures the server is on the correct branch
@@ -1614,7 +1614,7 @@ Server A and Server B must be up before this script is run - NiFi connects to Po
 
 ### D.5 `deploy-lakehouse.ps1`
 
-[infra/aws/scripts/deploy-lakehouse.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-lakehouse.ps1)
+[infra/aws/scripts/deploy-lakehouse.ps1](tazama-stack/infra/aws/scripts/deploy-lakehouse.ps1)
 
 Stages the Tazama Lakehouse archive through S3 and unpacks it on Server C into `/opt/Tazama_Warehouse`. Run this **after** `deploy-biar.ps1` has completed - the target directory is created by that script and the automation-orchestrator and datalakehouse-api containers must be up before any workflows access the warehouse.
 
@@ -1623,7 +1623,7 @@ The Lakehouse archive (`Tazama_Lakehouse.zip`) is not committed to the repositor
 > **Why S3 and not SCP?** The archive is typically 3-4 GB. EICE tunnels are stdio-based and throttled - SCP over EICE at that size would take hours or time out. Uploading to S3 from your workstation and then pulling it down on Server C (same AWS region, internal network) is dramatically faster and more reliable.
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 .\scripts\deploy-lakehouse.ps1 -ZipPath "D:\DevTools\Tazama\Tazama_Lakehouse.zip"
 ```
 
@@ -1662,7 +1662,7 @@ The instance IAM role has a scoped read policy on the `lakehouse-staging/` prefi
 
 ### D.6 `deploy.ps1`
 
-[infra/aws/scripts/deploy.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy.ps1)
+[infra/aws/scripts/deploy.ps1](tazama-stack/infra/aws/scripts/deploy.ps1)
 
 Orchestrator - calls `deploy-core.ps1`, `deploy-extensions.ps1`, and
 `deploy-biar.ps1` in sequence. Safe to run immediately after `tofu apply`;
@@ -1676,7 +1676,7 @@ each sub-script waits for its server's bootstrap internally.
 | `-NoPull` | Passed through to all three sub-scripts. Skips `--pull always` on `docker compose up`. |
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 .\deploy.ps1 -Password 'your-strong-password'
 ```
 
@@ -1684,7 +1684,7 @@ cd full-stack-docker-tazama\infra\aws\scripts
 
 ### D.7 `teardown.ps1`
 
-[infra/aws/scripts/teardown.ps1](full-stack-docker-tazama/infra/aws/scripts/teardown.ps1)
+[infra/aws/scripts/teardown.ps1](tazama-stack/infra/aws/scripts/teardown.ps1)
 
 Stops all Docker Compose stacks in reverse order (C → B → A). Volumes are
 preserved by default.
@@ -1700,7 +1700,7 @@ deleted) instances.
 
 To destroy all AWS infrastructure after teardown:
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 tofu destroy
 ```
 
@@ -1737,7 +1737,7 @@ scripts dot-source `helpers.ps1` for shared functions and constants.
 
 ### `helpers.ps1`
 
-[infra/aws/scripts/helpers.ps1](full-stack-docker-tazama/infra/aws/scripts/helpers.ps1)
+[infra/aws/scripts/helpers.ps1](tazama-stack/infra/aws/scripts/helpers.ps1)
 
 Shared library dot-sourced by every other script. Not invoked directly.
 
@@ -1768,7 +1768,7 @@ $env:TAZAMA_SSH_KEY     = "$HOME\.ssh\my_key"   # path to your EC2 SSH private k
 |---|---|---|---|
 | `$Script:AwsRegion` | `ap-south-1` | `TAZAMA_AWS_REGION` | AWS region for all CLI calls |
 | `$Script:AwsProfile` | `tazama` | `TAZAMA_AWS_PROFILE` | AWS CLI named profile |
-| `$Script:RemoteRepo` | `/home/ec2-user/full-stack-docker-tazama` | - | Repo path on all three servers |
+| `$Script:RemoteRepo` | `/home/ec2-user/tazama-stack` | - | Repo path on all three servers |
 | `$Script:RemoteUser` | `ec2-user` | - | SSH user on all three servers |
 | `$Script:RepoBranch` | `dev` | - | Branch pulled on each server during deploy |
 | `$Script:TemplatesDir` | `infra/aws/templates` | - | Location of the `.tpl` env overlay files |
@@ -1778,7 +1778,7 @@ $env:TAZAMA_SSH_KEY     = "$HOME\.ssh\my_key"   # path to your EC2 SSH private k
 
 ### `deploy.ps1`
 
-[infra/aws/scripts/deploy.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy.ps1)
+[infra/aws/scripts/deploy.ps1](tazama-stack/infra/aws/scripts/deploy.ps1)
 
 Deploys all three stacks in sequence by calling `deploy-core.ps1`,
 `deploy-extensions.ps1`, and `deploy-biar.ps1` in order.  Safe to run
@@ -1805,7 +1805,7 @@ first-boot bootstrap to complete before proceeding.
 
 ### `deploy-core.ps1`
 
-[infra/aws/scripts/deploy-core.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-core.ps1)
+[infra/aws/scripts/deploy-core.ps1](tazama-stack/infra/aws/scripts/deploy-core.ps1)
 
 Deploys the **tazama-core** stack on Server A.  Steps:
 
@@ -1831,7 +1831,7 @@ Deploys the **tazama-core** stack on Server A.  Steps:
 
 ### `deploy-extensions.ps1`
 
-[infra/aws/scripts/deploy-extensions.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-extensions.ps1)
+[infra/aws/scripts/deploy-extensions.ps1](tazama-stack/infra/aws/scripts/deploy-extensions.ps1)
 
 Deploys DEMS + DEAPI on **Server A**, then the **tazama-extensions** stack on
 Server B.  Steps:
@@ -1860,7 +1860,7 @@ Server B.  Steps:
 
 ### `deploy-biar.ps1`
 
-[infra/aws/scripts/deploy-biar.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-biar.ps1)
+[infra/aws/scripts/deploy-biar.ps1](tazama-stack/infra/aws/scripts/deploy-biar.ps1)
 
 Deploys the **tazama-biar** stack on Server C.  Steps:
 
@@ -1883,7 +1883,7 @@ Deploys the **tazama-biar** stack on Server C.  Steps:
 
 ### `deploy-lakehouse.ps1`
 
-[infra/aws/scripts/deploy-lakehouse.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-lakehouse.ps1)
+[infra/aws/scripts/deploy-lakehouse.ps1](tazama-stack/infra/aws/scripts/deploy-lakehouse.ps1)
 
 Stages a large Lakehouse warehouse archive (typically 3–4 GB) onto Server C
 via S3.  Direct SCP over EICE is too slow for files this size; this script
@@ -1912,7 +1912,7 @@ on the state bucket; the EC2 instance role must have `s3:GetObject` on the
 
 ### `restart-service.ps1`
 
-[infra/aws/scripts/restart-service.ps1](full-stack-docker-tazama/infra/aws/scripts/restart-service.ps1)
+[infra/aws/scripts/restart-service.ps1](tazama-stack/infra/aws/scripts/restart-service.ps1)
 
 Pulls the latest image for a single Docker Compose service and recreates its
 container without touching any other running containers.  Optionally fetches
@@ -1975,7 +1975,7 @@ container name, status, and image digest.
 
 ### `restart-core-processors.ps1`
 
-[infra/aws/scripts/restart-core-processors.ps1](full-stack-docker-tazama/infra/aws/scripts/restart-core-processors.ps1)
+[infra/aws/scripts/restart-core-processors.ps1](tazama-stack/infra/aws/scripts/restart-core-processors.ps1)
 
 Thin batch wrapper around `restart-service.ps1`. Iterates every core processor Docker Compose service on Server A (tazama-core) and, for each one, pulls the latest image from DockerHub and recreates the container in place. No full-stack repo pull is performed (`RepoPull` stays `none`), so the code already on the server is used unchanged - only the container images are refreshed.
 
@@ -2019,7 +2019,7 @@ The service list is grouped, and each group can be toggled off with a switch:
 
 ### `deploy-service.ps1`
 
-[infra/aws/scripts/deploy-service.ps1](full-stack-docker-tazama/infra/aws/scripts/deploy-service.ps1)
+[infra/aws/scripts/deploy-service.ps1](tazama-stack/infra/aws/scripts/deploy-service.ps1)
 
 Additively brings up a **new** Docker Compose service for the first time,
 without recreating any existing container. Use this when you introduce a new
@@ -2127,7 +2127,7 @@ so it persists across container restarts.
 
 ### `check-disk-space.ps1`
 
-[infra/aws/scripts/check-disk-space.ps1](full-stack-docker-tazama/infra/aws/scripts/check-disk-space.ps1)
+[infra/aws/scripts/check-disk-space.ps1](tazama-stack/infra/aws/scripts/check-disk-space.ps1)
 
 Reports disk usage on a Tazama server and, optionally, reclaims space taken by stale Docker images left behind after image pulls. Pulling refreshed `:rc` images (e.g. via `restart-core-processors.ps1`) leaves the previously-tagged image layers on disk as dangling images; over time these fill the root volume.
 
@@ -2166,7 +2166,7 @@ After a prune, the script re-runs the filesystem usage report so the reclaimed s
 
 ### `backup-jupyter-notebooks.ps1`
 
-[infra/aws/scripts/backup-jupyter-notebooks.ps1](full-stack-docker-tazama/infra/aws/scripts/backup-jupyter-notebooks.ps1)
+[infra/aws/scripts/backup-jupyter-notebooks.ps1](tazama-stack/infra/aws/scripts/backup-jupyter-notebooks.ps1)
 
 Backs up all JupyterHub user workspaces from Server C to a local timestamped archive. User notebooks live in the `tazama-biar_jupyterhub_notebooks` Docker volume (mounted at `/srv/notebooks` in the `biar-jupyterhub` container), one directory per Keycloak username. The script:
 
@@ -2204,7 +2204,7 @@ Workspace directories in the volume are owned by `root:root` (the hub spawns sin
 
 ### `dump-logs.ps1`
 
-[infra/aws/scripts/dump-logs.ps1](full-stack-docker-tazama/infra/aws/scripts/dump-logs.ps1)
+[infra/aws/scripts/dump-logs.ps1](tazama-stack/infra/aws/scripts/dump-logs.ps1)
 
 Dumps Docker container logs from a server to a local file. Connects via the EICE SSH tunnel and collects `docker logs --timestamps` output (stdout and stderr merged) for either a single named container or every running container on the server. Each container's log block is prefixed with a `Container: <name>` header, and the file starts with a capture summary (server, project, container, tail size, capture time).
 
@@ -2238,7 +2238,7 @@ The script fails with an error if `-Container` names a container that does not e
 
 ### `teardown.ps1`
 
-[infra/aws/scripts/teardown.ps1](full-stack-docker-tazama/infra/aws/scripts/teardown.ps1)
+[infra/aws/scripts/teardown.ps1](tazama-stack/infra/aws/scripts/teardown.ps1)
 
 Stops all Docker Compose stacks on all three servers with `docker compose down`.
 Does **not** destroy volumes by default - data is preserved and the stacks can
@@ -2267,7 +2267,7 @@ tofu destroy
 
 ### `add-ssh-key.ps1`
 
-[infra/aws/scripts/add-ssh-key.ps1](full-stack-docker-tazama/infra/aws/scripts/add-ssh-key.ps1)
+[infra/aws/scripts/add-ssh-key.ps1](tazama-stack/infra/aws/scripts/add-ssh-key.ps1)
 
 Appends an SSH public key to `~/.ssh/authorized_keys` on one or more servers
 via EICE.  Duplicate-safe - the key is only added if it is not already present.
@@ -2290,7 +2290,7 @@ Use this to grant a team member direct SSH access to the EC2 instances.
 
 ### `tunnel-all.ps1`
 
-[infra/aws/scripts/tunnel-all.ps1](full-stack-docker-tazama/infra/aws/scripts/tunnel-all.ps1)
+[infra/aws/scripts/tunnel-all.ps1](tazama-stack/infra/aws/scripts/tunnel-all.ps1)
 
 Forwards all service ports from all three servers to `localhost` simultaneously
 by launching three background SSH tunnel jobs.  Useful when you need to access
@@ -2311,7 +2311,7 @@ Ports forwarded - see [`tunnel-server-a.ps1`](#tunnel-server-aps1),
 
 ### `tunnel-server-a.ps1`
 
-[infra/aws/scripts/tunnel-server-a.ps1](full-stack-docker-tazama/infra/aws/scripts/tunnel-server-a.ps1)
+[infra/aws/scripts/tunnel-server-a.ps1](tazama-stack/infra/aws/scripts/tunnel-server-a.ps1)
 
 Forwards Server A service ports to `localhost`. Press **Ctrl+C** to close.
 
@@ -2338,7 +2338,7 @@ Forwards Server A service ports to `localhost`. Press **Ctrl+C** to close.
 
 ### `tunnel-server-b.ps1`
 
-[infra/aws/scripts/tunnel-server-b.ps1](full-stack-docker-tazama/infra/aws/scripts/tunnel-server-b.ps1)
+[infra/aws/scripts/tunnel-server-b.ps1](tazama-stack/infra/aws/scripts/tunnel-server-b.ps1)
 
 Forwards Server B service ports to `localhost`. Press **Ctrl+C** to close.
 
@@ -2366,7 +2366,7 @@ Forwards Server B service ports to `localhost`. Press **Ctrl+C** to close.
 
 ### `tunnel-server-c.ps1`
 
-[infra/aws/scripts/tunnel-server-c.ps1](full-stack-docker-tazama/infra/aws/scripts/tunnel-server-c.ps1)
+[infra/aws/scripts/tunnel-server-c.ps1](tazama-stack/infra/aws/scripts/tunnel-server-c.ps1)
 
 Forwards Server C service ports to `localhost`. Press **Ctrl+C** to close.
 
@@ -2423,7 +2423,7 @@ There are two ways to run the tunnels:
 waits on them in a single terminal window. Ctrl+C stops all three cleanly.
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 .\tunnel-all.ps1
 ```
 
@@ -2506,7 +2506,7 @@ not deployed by default. Enable it with a single variable and apply:
 required. Pass it as a second var-file:
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 tofu apply -var-file terraform.tfvars -var-file alb.tfvars
 ```
 
@@ -2528,7 +2528,7 @@ running containers are untouched. Expected additions: roughly `+30 resources`
 >
 > **Applied ALB after Phase D?** Keycloak is already running with `KC_HOSTNAME=localhost`. Fix it by re-running `deploy-core.ps1 -NoPull` - the script will detect the ALB DNS name, update `core/.env`, and the compose up will recreate the Keycloak container with the correct hostname. Alternatively, SSH to Server A and restart just Keycloak:
 > ```bash
-> cd ~/full-stack-docker-tazama/core
+> cd ~/tazama-stack/core
 > echo "KEYCLOAK_HOSTNAME=<alb-dns-name>" >> .env
 > docker compose -p tazama-core restart keycloak
 > ```
@@ -2568,7 +2568,7 @@ The module sets two non-default attributes. Both were added after a production i
 | Attribute | Value | Why |
 |---|---|---|
 | ALB `idle_timeout` | 400s (default 60s) | The 60s default severed tazama-demo's long-lived socket.io connections, causing constant client reconnect churn and a ~30% target 4XX rate (`400 Session ID unknown` on stale reconnects). 400s comfortably exceeds socket.io's default 25s ping interval and survives long-poll cycles. |
-| `stickiness` on `tazama-tg-demo` | `lb_cookie`, 86400s | socket.io polling/websocket handshakes must hit the same target. Harmless with a single target, required the moment the service scales out. Add any new socket.io-style service to `sticky_services` in [modules/alb/main.tf](full-stack-docker-tazama/infra/aws/modules/alb/main.tf). |
+| `stickiness` on `tazama-tg-demo` | `lb_cookie`, 86400s | socket.io polling/websocket handshakes must hit the same target. Harmless with a single target, required the moment the service scales out. Add any new socket.io-style service to `sticky_services` in [modules/alb/main.tf](tazama-stack/infra/aws/modules/alb/main.tf). |
 
 These are managed in the Terraform module, so a plain `tofu apply` preserves them. Do not tune them manually with `aws elbv2 modify-*` - manual changes will be reverted on the next apply.
 
@@ -2595,9 +2595,9 @@ aws cloudwatch get-metric-statistics --profile tazama --region ap-south-1 `
 - `target_group_arns` - map of service name → TG ARN, for Phase G host-based routing
 
 Files:
-- [infra/aws/modules/alb/variables.tf](full-stack-docker-tazama/infra/aws/modules/alb/variables.tf)
-- [infra/aws/modules/alb/main.tf](full-stack-docker-tazama/infra/aws/modules/alb/main.tf)
-- [infra/aws/modules/alb/outputs.tf](full-stack-docker-tazama/infra/aws/modules/alb/outputs.tf)
+- [infra/aws/modules/alb/variables.tf](tazama-stack/infra/aws/modules/alb/variables.tf)
+- [infra/aws/modules/alb/main.tf](tazama-stack/infra/aws/modules/alb/main.tf)
+- [infra/aws/modules/alb/outputs.tf](tazama-stack/infra/aws/modules/alb/outputs.tf)
 
 #### E.2.4 Rollback
 
@@ -2638,7 +2638,7 @@ Copy `domain.tfvars.example` to `domain.tfvars` (gitignored) and set your
 zone name:
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 Copy-Item domain.tfvars.example domain.tfvars
 # Edit domain.tfvars: replace "env.your-domain.com" with your actual zone
 notepad domain.tfvars
@@ -2859,7 +2859,7 @@ All three servers are up with containers running.
 **Pre-requisite:** `tunnel-server-a.ps1` running in a separate terminal (see Phase E.1).
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 .\tunnel-server-a.ps1
 ```
 
@@ -2943,7 +2943,7 @@ Invoke-RestMethod http://localhost:9200/_cluster/health | ConvertTo-Json
 **Cross-server connectivity (Server C - datalakehouse-api):** The CMS backend calls the datalakehouse-api on Server C directly (not via the ALB). Verify reachability from Server B:
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 . .\scripts\helpers.ps1
 $out = Get-TofuOutputs
 Invoke-RemoteCommand -InstanceId $out.ServerB_InstanceId -Command 'curl -s -o /dev/null -w "%{http_code} %{time_total}s" --max-time 10 http://biar.tazama.internal:8282/health'
@@ -3017,14 +3017,14 @@ Invoke-RestMethod http://localhost:8000/hub/health
 **NiFi → Server A PostgreSQL connectivity:** NiFi connects to PostgreSQL on Server A (`:15432`) at startup. In the NiFi UI, check the Controller Services tab. Any DBCPConnectionPool service that targets `core.tazama.internal:15432` should show **Enabled** status. A **Disabled** or **Invalid** service indicates the `SERVER_A_HOST` overlay was not applied - check `env-biar.tpl` and re-run the overlay step manually:
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 . .\helpers.ps1
 $out = Get-TofuOutputs
 $overlayFile  = Join-Path $PSScriptRoot '..\templates\env-biar.tpl'
-$remoteEnvFile = '/home/ec2-user/full-stack-docker-tazama/biar/.env'
+$remoteEnvFile = '/home/ec2-user/tazama-stack/biar/.env'
 Set-RemoteEnvOverlay -InstanceId $out.ServerC_InstanceId -OverlayFile $overlayFile -RemoteEnvFile $remoteEnvFile
 # then restart the biar stack
-Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command "cd /home/ec2-user/full-stack-docker-tazama/biar && docker compose -p tazama-biar restart"
+Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command "cd /home/ec2-user/tazama-stack/biar && docker compose -p tazama-biar restart"
 ```
 
 ---
@@ -3032,14 +3032,14 @@ Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command "cd /home/ec2-
 ### F.7 Full teardown
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 .\teardown.ps1               # stop containers; volumes preserved
 .\teardown.ps1 -RemoveVolumes  # stop containers AND delete all volumes (type YES to confirm)
 ```
 
 To also destroy all AWS infrastructure:
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 tofu destroy
 ```
 
@@ -3050,7 +3050,7 @@ tofu destroy
 Used when the EC2 instances are still running but containers were torn down via `teardown.ps1`. The repo and `.env` files are already on each server from the previous deploy.
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws\scripts
+cd tazama-stack\infra\aws\scripts
 .\deploy-core.ps1
 .\deploy-extensions.ps1
 .\deploy-biar.ps1
@@ -3075,7 +3075,7 @@ After `tofu destroy`, all EC2 instances, the EICE endpoint, and all associated n
 > **If you are only rebuilding containers** (F.8 - no `tofu destroy`), the Route 53 zone is untouched and NS delegation does not need to be repeated. The zone and its nameservers are infrastructure-layer resources that survive container-level redeployments.
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 
 # Review what will be created
 # Include all active var-files - omitting domain.tfvars here would destroy the Route 53 zone
@@ -3134,7 +3134,7 @@ These are the credentials that need to be changed before the beta is used with a
 The simplest approach for the current deployment is to change the password directly in the running container and patch the env files on disk.
 
 ```powershell
-cd "full-stack-docker-tazama\infra\aws\scripts"
+cd "tazama-stack\infra\aws\scripts"
 . .\helpers.ps1
 $out = Get-TofuOutputs
 
@@ -3172,10 +3172,10 @@ NiFi's single-user authenticator only activates when NiFi is serving over HTTPS.
 
 ```bash
 # On Server C (via Invoke-RemoteCommand or SSH)
-sed -i 's/NIFI_WEB_HTTP_PORT=.*//' ~/full-stack-docker-tazama/biar/env/biar-nifi.env
-sed -i 's/NIFI_WEB_HTTP_HOST=.*//' ~/full-stack-docker-tazama/biar/env/biar-nifi.env
-echo "NIFI_WEB_HTTPS_PORT=8443" >> ~/full-stack-docker-tazama/biar/env/biar-nifi.env
-echo "NIFI_WEB_HTTPS_HOST=0.0.0.0" >> ~/full-stack-docker-tazama/biar/env/biar-nifi.env
+sed -i 's/NIFI_WEB_HTTP_PORT=.*//' ~/tazama-stack/biar/env/biar-nifi.env
+sed -i 's/NIFI_WEB_HTTP_HOST=.*//' ~/tazama-stack/biar/env/biar-nifi.env
+echo "NIFI_WEB_HTTPS_PORT=8443" >> ~/tazama-stack/biar/env/biar-nifi.env
+echo "NIFI_WEB_HTTPS_HOST=0.0.0.0" >> ~/tazama-stack/biar/env/biar-nifi.env
 ```
 
 **Step 2 - Update the biar compose file** to expose port 8443 instead of 8088, and update the ALB target group to point to 8443. This requires a `tofu apply` to update the ALB listener rule.
@@ -3193,7 +3193,7 @@ NiFi requires a minimum of 12 characters. Store the password in SSM as `/tazama/
 
 ```powershell
 Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command `
-  "cd ~/full-stack-docker-tazama/biar && docker compose -p tazama-biar \
+  "cd ~/tazama-stack/biar && docker compose -p tazama-biar \
    -f ./docker-compose.biar.infrastructure.yaml \
    -f ./docker-compose.hub.biar.yaml \
    -f ./docker-compose.utils.init.yaml \
@@ -3207,10 +3207,10 @@ Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command `
 ```bash
 # On Server C
 sed -i 's/OZONE-SITE.XML_ozone.s3g.secret.key=.*/OZONE-SITE.XML_ozone.s3g.secret.key=<strong-secret>/' \
-  ~/full-stack-docker-tazama/biar/env/ozone-docker-config
+  ~/tazama-stack/biar/env/ozone-docker-config
 
 # Restart s3g
-cd ~/full-stack-docker-tazama/biar
+cd ~/tazama-stack/biar
 docker compose -p tazama-biar \
   -f ./docker-compose.biar.infrastructure.yaml \
   -f ./docker-compose.hub.biar.yaml \
@@ -3342,7 +3342,7 @@ region until the validation is complete.
 3. Once cleared, re-run plan and apply from the IaC directory. OpenTofu reads the S3 state file, skips everything already created, and plans only the three EC2 instances still missing:
 
 ```powershell
-cd full-stack-docker-tazama\infra\aws
+cd tazama-stack\infra\aws
 tofu plan -var-file terraform.tfvars -out tfplan
 tofu apply tfplan
 ```
@@ -3491,7 +3491,7 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.ssh"
 icacls "$env:USERPROFILE\.ssh" /inheritance:r /grant "${env:USERNAME}:(OI)(CI)F"
 
 # Copy key from its location in the repo
-Copy-Item "<path-to-repo>\full-stack-docker-tazama\infra\aws\tazama-aws.pem" "$env:USERPROFILE\.ssh\tazama-aws.pem"
+Copy-Item "<path-to-repo>\tazama-stack\infra\aws\tazama-aws.pem" "$env:USERPROFILE\.ssh\tazama-aws.pem"
 ```
 
 **2. Create the SSH config file**
@@ -3506,7 +3506,7 @@ notepad "$env:USERPROFILE\.ssh\config"
 Add an entry for each server (replace instance IDs with the values from `tofu output`):
 
 ```powershell
-tofu -chdir=full-stack-docker-tazama/infra/aws output -json | ConvertFrom-Json | Select-Object server_a_instance_id, server_b_instance_id, server_c_instance_id
+tofu -chdir=tazama-stack/infra/aws output -json | ConvertFrom-Json | Select-Object server_a_instance_id, server_b_instance_id, server_c_instance_id
 ```
 
 ```
@@ -3686,7 +3686,7 @@ Export the live realm (including users) from the running Keycloak container, cop
 **Step 1 - Export the realm inside the container on Server A:**
 
 ```powershell
-cd "full-stack-docker-tazama\infra\aws\scripts"
+cd "tazama-stack\infra\aws\scripts"
 . .\helpers.ps1
 $out = Get-TofuOutputs
 
@@ -3704,14 +3704,14 @@ Invoke-RemoteCommand -InstanceId $out.ServerA_InstanceId -Command `
 ```powershell
 $configPath = New-SshConfig -InstanceId $out.ServerA_InstanceId
 scp -F $configPath "$($out.ServerA_InstanceId):/home/ec2-user/tazama-realm.json" `
-    "full-stack-docker-tazama\core\auth\keycloak\realms\00-tazama-test-realm.json"
+    "tazama-stack\core\auth\keycloak\realms\00-tazama-test-realm.json"
 Remove-Item $configPath
 ```
 
 **Step 3 - Commit and push:**
 
 ```powershell
-cd "full-stack-docker-tazama"
+cd "tazama-stack"
 git add core/auth/keycloak/realms/00-tazama-test-realm.json
 git commit -S -s -m "chore: export live Keycloak tazama realm"
 git push origin <your-branch>
@@ -3871,7 +3871,7 @@ From your own workstation (which already has access), copy their public key into
 [`infra/aws/scripts/add-ssh-key.ps1`](scripts/add-ssh-key.ps1) handles all three servers in one call and skips duplicates automatically:
 
 ```powershell
-cd "full-stack-docker-tazama\infra\aws\scripts"
+cd "tazama-stack\infra\aws\scripts"
 
 # Paste the full contents of the user's .pub file as the argument
 .\add-ssh-key.ps1 -PublicKey "ssh-ed25519 AAAA... their-name@example.com"
@@ -3886,7 +3886,7 @@ To grant access to specific servers only, use the `-Servers` parameter:
 **Option B - manual**
 
 ```powershell
-cd "full-stack-docker-tazama\infra\aws\scripts"
+cd "tazama-stack\infra\aws\scripts"
 . .\helpers.ps1
 $out = Get-TofuOutputs
 
@@ -3914,7 +3914,7 @@ The easiest way to connect is via an SSH config file. This lets the user run `ss
 **1. Get the instance IDs** (run this yourself and share the values with the user):
 
 ```powershell
-tofu -chdir=full-stack-docker-tazama/infra/aws output -json | ConvertFrom-Json | Select-Object server_a_instance_id, server_b_instance_id, server_c_instance_id
+tofu -chdir=tazama-stack/infra/aws output -json | ConvertFrom-Json | Select-Object server_a_instance_id, server_b_instance_id, server_c_instance_id
 ```
 
 **2. User: create or open the SSH config file:**

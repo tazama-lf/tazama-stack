@@ -153,7 +153,7 @@ Elasticsearch integration overlay:
   - NATS stream management, monitoring, and debugging tools
 
 #### `docker-compose.utils.pgadmin.yaml`
-- **`core-pgadmin`**: pgAdmin 4.9 (port `${PGADMIN_PORT:-5050}:80`)
+- **`core-pgadmin`**: pgAdmin 9.15.0 (port `${PGADMIN_PORT:-5050}:80`)
   - Pre-configured Tazama server connection via inline `servers.json`
 
 #### `docker-compose.utils.hasura.yaml`
@@ -262,7 +262,7 @@ docker compose \
 | Elasticsearch | 9200 | `${ES_PORT}` | Search and analytics |
 | Kibana | 5601 | `${KIBANA_PORT}` | Visualization |
 | APM Server | 8200 | `${APMSERVER_PORT}` | Application monitoring |
-| Demo UI | 3001 | 3001 | Demo interface |
+| Demo UI | 3011 | `${DEMO_PORT:-3011}` | Demo interface |
 | NATS Utilities | 4000 | 4000 | NATS management |
 | Batch PPA | 4100 | 4100 | Pain.001 processor |
 
@@ -338,7 +338,7 @@ DockerHub API services (Server A):
 ### Utility Files
 
 #### `docker-compose.utils.pgadmin.yaml`
-- **`extensions-pgadmin`**: pgAdmin 4.9 (port `${PGADMIN_PORT:-5050}:80`, default `5051` per `.env`)
+- **`extensions-pgadmin`**: pgAdmin 9.15.0 (port `${PGADMIN_PORT:-5050}:80`, default `5051` per `.env`)
   - Pre-configured Tazama server connection; note: uses port 5051 on Server B to avoid conflict with core's 5050
 
 ## Extensions Deployment Patterns

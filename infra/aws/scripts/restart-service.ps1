@@ -42,7 +42,7 @@
     the current container state before committing to the change.
 
 .PARAMETER RepoPull
-    Controls whether the full-stack-docker-tazama repo is updated on the target
+    Controls whether the tazama-stack repo is updated on the target
     server before recreating the container.
 
       Omitted / 'none'        - skip the repo pull entirely (fastest; use the

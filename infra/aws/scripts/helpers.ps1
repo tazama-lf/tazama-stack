@@ -34,7 +34,7 @@ $env:AWS_PAGER = ''
 $Script:AwsRegion  = if ($env:TAZAMA_AWS_REGION)  { $env:TAZAMA_AWS_REGION }  else { 'ap-south-1' }
 $Script:AwsProfile = if ($env:TAZAMA_AWS_PROFILE) { $env:TAZAMA_AWS_PROFILE } else { 'tazama' }
 $Script:KeyFile    = if ($env:TAZAMA_SSH_KEY)      { $env:TAZAMA_SSH_KEY }     else { "$env:USERPROFILE\.ssh\id_ed25519" }
-$Script:RemoteRepo   = '/home/ec2-user/full-stack-docker-tazama'
+$Script:RemoteRepo   = '/home/ec2-user/tazama-stack'
 $Script:RemoteUser   = 'ec2-user'
 $Script:RepoBranch   = 'dev'
 $Script:TemplatesDir = Join-Path $PSScriptRoot '..\templates'
@@ -123,7 +123,7 @@ function Invoke-RemoteCommand {
 
 # -- Copy-ToRemote -------------------------------------------------------------
 # SCP $LocalPath to $RemotePath on the remote instance via EICE.
-# $RemotePath may contain ~ (e.g. ~/full-stack-docker-tazama/...).
+# $RemotePath may contain ~ (e.g. ~/tazama-stack/...).
 function Copy-ToRemote {
     param(
         [string]$InstanceId,

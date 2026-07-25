@@ -46,7 +46,7 @@
     image is already present on the host.
 
 .PARAMETER RepoPull
-    Controls whether the full-stack-docker-tazama repo is updated on the target
+    Controls whether the tazama-stack repo is updated on the target
     server before the service is created.
 
       Omitted / 'none'        - skip the repo pull entirely (use the code already
