@@ -12,6 +12,7 @@
       - Copy-ToRemote        - SCP a file to an EC2 instance via EICE
       - Set-RemoteEnvOverlay - apply KEY=VALUE overlay to a remote .env file
       - Set-DemoUiOverlay    - apply tazama-demo public URL + SSM NEXTAUTH_SECRET
+      - Set-SmtpOverlay      - apply CMS SMTP credentials from SSM
       - Set-ServerEnvOverlays - re-apply a server's full per-server AWS env overlays
       - Wait-Bootstrap       - poll until the bootstrap script has completed
 #>
@@ -236,6 +237,63 @@ function Set-DemoUiOverlay {
     Write-Host "[$ServerLabel] Demo UI overlay applied." -ForegroundColor Green
 }
 
+# -- Set-SmtpOverlay ----------------------------------------------------------
+# Inject the CMS email credentials from SSM (/tazama/smtp_user, /tazama/smtp_pass)
+# into extensions/.env on Server B. The committed case-management-system.env
+# references them via ${SMTP_USER:-} / ${SMTP_PASS:-} interpolation, so no
+# secret ever lives in the repo. When the SSM parameters are absent the vars
+# are explicitly blanked (not left untouched) so stale credentials from a
+# previous overlay run cannot survive in extensions/.env; the CMS backend then
+# starts with email sending disabled.
+function Set-SmtpOverlay {
+    param(
+        [string]$InstanceId,
+        [string]$ServerLabel = 'Server B'
+    )
+
+    # On any SSM failure, blank both vars rather than returning early: the env
+    # file may still hold values from a previous successful run. Note this only
+    # cleans the file - already-running containers keep their env until the
+    # calling deploy script recreates them (docker compose up -d), which every
+    # caller does after applying overlays.
+    $blankOverlay = "SMTP_USER=`nSMTP_PASS="
+
+    $smtpUser = aws ssm get-parameter `
+        --name /tazama/smtp_user `
+        --with-decryption `
+        --region $Script:AwsRegion `
+        --profile $Script:AwsProfile `
+        --query Parameter.Value `
+        --output text 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $smtpUser) {
+        Write-Warning "[$ServerLabel] /tazama/smtp_user not found in SSM - clearing SMTP vars, CMS email sending disabled. Set with: aws ssm put-parameter --name /tazama/smtp_user --type SecureString --value <address> (and /tazama/smtp_pass)."
+        Set-RemoteEnvOverlay -InstanceId $InstanceId `
+            -OverlayContent $blankOverlay `
+            -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
+        return
+    }
+    $smtpPass = aws ssm get-parameter `
+        --name /tazama/smtp_pass `
+        --with-decryption `
+        --region $Script:AwsRegion `
+        --profile $Script:AwsProfile `
+        --query Parameter.Value `
+        --output text 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $smtpPass) {
+        Write-Warning "[$ServerLabel] /tazama/smtp_pass not found in SSM - clearing SMTP vars, CMS email sending disabled."
+        Set-RemoteEnvOverlay -InstanceId $InstanceId `
+            -OverlayContent $blankOverlay `
+            -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
+        return
+    }
+
+    Write-Host "[$ServerLabel] Applying SMTP overlay (credentials from SSM)..."
+    Set-RemoteEnvOverlay -InstanceId $InstanceId `
+        -OverlayContent "SMTP_USER=$smtpUser`nSMTP_PASS=$smtpPass" `
+        -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
+    Write-Host "[$ServerLabel] SMTP overlay applied." -ForegroundColor Green
+}
+
 # -- Set-ServerEnvOverlays ----------------------------------------------------
 # Re-apply the per-server AWS env overlays that must not be committed. A
 # 'git reset --hard' on the target server restores the repo's committed
@@ -244,7 +302,8 @@ function Set-DemoUiOverlay {
 #              -SkipExtensionsOverlay; KEYCLOAK_HOSTNAME in core/.env; strips
 #              KC_HOSTNAME_PORT from keycloak.env; and the tazama-demo public
 #              URL + NEXTAUTH_SECRET (see Set-DemoUiOverlay).
-#   Server B : extensions/.env overlay.
+#   Server B : extensions/.env overlay; CMS SMTP credentials from SSM (see
+#              Set-SmtpOverlay).
 #   Server C : biar/.env overlay (host names, S3A_ENDPOINT, COUCHDB_URL).
 #
 # Shared by deploy-core.ps1, deploy-service.ps1 and restart-service.ps1 so the
@@ -297,6 +356,9 @@ function Set-ServerEnvOverlays {
             Set-RemoteEnvOverlay -InstanceId $InstanceId `
                 -OverlayFile (Join-Path $Script:TemplatesDir 'env-extensions.tpl') `
                 -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
+
+            # extensions/.env: CMS SMTP credentials from SSM
+            Set-SmtpOverlay -InstanceId $InstanceId -ServerLabel $label
         }
         'C' {
             # biar/.env: SERVER_A/B/C_HOST, S3A_ENDPOINT, COUCHDB_URL
