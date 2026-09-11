@@ -101,6 +101,10 @@ Set-RemoteEnvOverlay -InstanceId $idB -OverlayFile $overlayFile -RemoteEnvFile $
 
 Write-Host '[Server B] .env overlay applied.' -ForegroundColor Green
 
+# CMS SMTP credentials from SSM (/tazama/smtp_user, /tazama/smtp_pass) into
+# extensions/.env - consumed by case-management-system.env via interpolation.
+Set-SmtpOverlay -InstanceId $idB -ServerLabel 'Server B'
+
 # Apply credentials overlay to extensions/.env and all service env files.
 # Built in-memory from the -Password parameter — never written to a committed file.
 # Skipped entirely when -Password is not supplied.
