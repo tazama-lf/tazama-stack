@@ -242,12 +242,21 @@ function Set-DemoUiOverlay {
 # into extensions/.env on Server B. The committed case-management-system.env
 # references them via ${SMTP_USER:-} / ${SMTP_PASS:-} interpolation, so no
 # secret ever lives in the repo. When the SSM parameters are absent the vars
-# stay empty and the CMS backend starts with email sending disabled.
+# are explicitly blanked (not left untouched) so stale credentials from a
+# previous overlay run cannot survive in extensions/.env; the CMS backend then
+# starts with email sending disabled.
 function Set-SmtpOverlay {
     param(
         [string]$InstanceId,
         [string]$ServerLabel = 'Server B'
     )
+
+    # On any SSM failure, blank both vars rather than returning early: the env
+    # file may still hold values from a previous successful run. Note this only
+    # cleans the file - already-running containers keep their env until the
+    # calling deploy script recreates them (docker compose up -d), which every
+    # caller does after applying overlays.
+    $blankOverlay = "SMTP_USER=`nSMTP_PASS="
 
     $smtpUser = aws ssm get-parameter `
         --name /tazama/smtp_user `
@@ -257,7 +266,10 @@ function Set-SmtpOverlay {
         --query Parameter.Value `
         --output text 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $smtpUser) {
-        Write-Warning "[$ServerLabel] /tazama/smtp_user not found in SSM - CMS email sending disabled. Set with: aws ssm put-parameter --name /tazama/smtp_user --type SecureString --value <address> (and /tazama/smtp_pass)."
+        Write-Warning "[$ServerLabel] /tazama/smtp_user not found in SSM - clearing SMTP vars, CMS email sending disabled. Set with: aws ssm put-parameter --name /tazama/smtp_user --type SecureString --value <address> (and /tazama/smtp_pass)."
+        Set-RemoteEnvOverlay -InstanceId $InstanceId `
+            -OverlayContent $blankOverlay `
+            -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
         return
     }
     $smtpPass = aws ssm get-parameter `
@@ -268,7 +280,10 @@ function Set-SmtpOverlay {
         --query Parameter.Value `
         --output text 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $smtpPass) {
-        Write-Warning "[$ServerLabel] /tazama/smtp_pass not found in SSM - CMS email sending disabled."
+        Write-Warning "[$ServerLabel] /tazama/smtp_pass not found in SSM - clearing SMTP vars, CMS email sending disabled."
+        Set-RemoteEnvOverlay -InstanceId $InstanceId `
+            -OverlayContent $blankOverlay `
+            -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
         return
     }
 
