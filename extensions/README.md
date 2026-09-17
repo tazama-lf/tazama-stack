@@ -291,7 +291,7 @@ If the backend exits immediately with a config-validation error naming `SESSION_
 | Local / plain HTTP | `false` | `lax` | `http://localhost:5175` (the frontend origin) |
 | Production / HTTPS | `true` | `strict` | the public HTTPS frontend origin(s), comma-separated |
 
-> On plain HTTP, `SESSION_COOKIE_SECURE=true` silently breaks login: the browser discards the session cookie and every request 401s. `CORS_ALLOWED_ORIGINS` must be the frontend origin, not the backend URL.
+> On plain HTTP, `SESSION_COOKIE_SECURE=true` can silently break login: most browsers discard the session cookie so every request 401s (behaviour varies by browser and host — e.g. Chromium still permits `Secure` cookies on `localhost`). `CORS_ALLOWED_ORIGINS` must be the frontend origin, not the backend URL.
 
 ### DEMS/DEAPI pre-flight fails with "tazama-core is not running"
 
