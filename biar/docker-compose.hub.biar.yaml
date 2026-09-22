@@ -53,6 +53,7 @@ services:
       - "${DATALAKEHOUSE_API_PORT}:8282"
     volumes:
       - ${TAZAMA_WAREHOUSE_HOST_PATH}:/opt/Tazama_Warehouse
+      - ./auth/test-public-key.pem:/auth/test-public-key.pem:ro
     depends_on:
       - ozone-s3g
 
