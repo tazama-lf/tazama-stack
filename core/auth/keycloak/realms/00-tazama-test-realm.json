@@ -159,6 +159,14 @@
       "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
       "attributes" : { }
     }, {
+      "id" : "f62c367c-ab5d-4196-8127-61ea0686a204",
+      "name" : "QUERY_LAKEHOUSE",
+      "description" : "Required claim to query biar-datalakehouse-api (CMS Alert Navigator / gold lakehouse data)",
+      "composite" : false,
+      "clientRole" : false,
+      "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
+      "attributes" : { }
+    }, {
       "id" : "1184d0fc-e305-4429-9c06-04dc2ad1d7a4",
       "name" : "PUT_V1_EVENT_FLOW_CONTROL_ENTITY",
       "description" : "",
@@ -734,7 +742,7 @@
       "attributes" : {
         "TENANT_ID" : [ "TAZAMA" ]
       },
-      "realmRoles" : [ "CMS_ADMIN" ],
+      "realmRoles" : [ "CMS_ADMIN", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
     }, {
       "id" : "0d8d6350-d6a2-4141-8b19-8e4609381d69",
@@ -743,7 +751,7 @@
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
       "subGroups" : [ ],
       "attributes" : { },
-      "realmRoles" : [ "CMS_COMPLIANCE_OFFICER" ],
+      "realmRoles" : [ "CMS_COMPLIANCE_OFFICER", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
     }, {
       "id" : "e1e137c0-8200-4109-b741-54f5956eff43",
@@ -752,7 +760,7 @@
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
       "subGroups" : [ ],
       "attributes" : { },
-      "realmRoles" : [ "CMS_INVESTIGATOR" ],
+      "realmRoles" : [ "CMS_INVESTIGATOR", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
     }, {
       "id" : "e8a4f193-843f-45fc-aa3e-796b50fbf392",
@@ -761,7 +769,7 @@
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
       "subGroups" : [ ],
       "attributes" : { },
-      "realmRoles" : [ "CMS_SUPERVISOR" ],
+      "realmRoles" : [ "CMS_SUPERVISOR", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
     } ],
     "attributes" : {
