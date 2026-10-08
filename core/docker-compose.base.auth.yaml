@@ -16,6 +16,9 @@ services:
       - KC_HOSTNAME_STRICT_HTTPS=false
       - KC_PROXY=edge
       - KEYCLOAK_IMPORT_STRATEGY=IGNORE_EXISTING
+      # Resolved by the realm import placeholders on the jupyterhub client
+      - JUPYTERHUB_PUBLIC_URL=${JUPYTERHUB_PUBLIC_URL:-http://localhost:8000}
+      - JUPYTERHUB_OIDC_CLIENT_SECRET=${JUPYTERHUB_OIDC_CLIENT_SECRET:-jupyterhub-test-secret}
       - QUARKUS_HTTP_ACCESS_LOG_ENABLED=true
       - KC_LOG_LEVEL=INFO
     volumes:

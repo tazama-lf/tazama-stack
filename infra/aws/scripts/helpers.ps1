@@ -12,6 +12,7 @@
       - Copy-ToRemote        - SCP a file to an EC2 instance via EICE
       - Set-RemoteEnvOverlay - apply KEY=VALUE overlay to a remote .env file
       - Set-DemoUiOverlay    - apply tazama-demo public URL + SSM NEXTAUTH_SECRET
+      - Set-JupyterHubOidcOverlay - apply JupyterHub public URL + SSM OIDC client secret for the Keycloak realm import
       - Set-SmtpOverlay      - apply CMS SMTP credentials from SSM
       - Set-ServerEnvOverlays - re-apply a server's full per-server AWS env overlays
       - Wait-Bootstrap       - poll until the bootstrap script has completed
@@ -63,6 +64,7 @@ function Get-TofuOutputs {
             AlbDnsName         = if ($json.PSObject.Properties['alb_dns_name']) { $json.alb_dns_name.value } else { '' }
             KeycloakHostname   = if ($json.PSObject.Properties['keycloak_hostname']) { $json.keycloak_hostname.value } else { '' }
             DemoPublicUrl      = if ($json.PSObject.Properties['demo_public_url']) { $json.demo_public_url.value } else { '' }
+            JupyterPublicUrl   = if ($json.PSObject.Properties['jupyter_public_url']) { $json.jupyter_public_url.value } else { '' }
         }
     }
     finally {
@@ -184,14 +186,18 @@ function Set-RemoteEnvOverlay {
     #      cannot break the sed expression.
     #   3. Use an explicit if/then/else instead of "&& ... ||" so a sed failure
     #      does not trigger the append branch and create duplicate KEY= lines.
+    #   4. Escape \ and & in the sed replacement copy only (sed treats & as the
+    #      matched text and \ as an escape); the append branch writes the raw value.
     $bashLines = foreach ($line in $lines) {
         $key   = ($line -split '=', 2)[0].Trim()
         $value = ($line -split '=', 2)[1].Trim()
         # Escape single quotes for POSIX shell: ' -> '\''.
         $vEsc  = $value -replace "'", "'\''" 
+        # sed escaping must precede quote escaping, which itself introduces a \.
+        $vSed  = ($value -replace '\\', '\\' -replace '&', '\&') -replace "'", "'\''"
         # \x01 is used as the sed delimiter; it cannot appear in env values.
         "if grep -q '^${key}=' ${RemoteEnvFile}; then " +
-        "sed -i 's`u{1}^${key}=.*`u{1}${key}=${vEsc}`u{1}' ${RemoteEnvFile}; " +
+        "sed -i 's`u{1}^${key}=.*`u{1}${key}=${vSed}`u{1}' ${RemoteEnvFile}; " +
         "else printf '%s\n' '${key}=${vEsc}' >> ${RemoteEnvFile}; fi"
     }
     $batchCmd = $bashLines -join '; '
@@ -229,12 +235,57 @@ function Set-DemoUiOverlay {
     if ($LASTEXITCODE -eq 0 -and $demoSecret) {
         $demoOverlay += "`nDEMO_NEXTAUTH_SECRET=$demoSecret"
     } else {
+        # Blank the key so a stale secret from an earlier run cannot survive;
+        # compose ${DEMO_NEXTAUTH_SECRET:-...} treats empty as unset.
+        $demoOverlay += "`nDEMO_NEXTAUTH_SECRET="
         Write-Warning "[$ServerLabel] /tazama/nextauth_secret not found in SSM - demo UI falls back to the committed test secret. Set it with: aws ssm put-parameter --name /tazama/nextauth_secret --type SecureString --value <openssl rand -base64 32>"
     }
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
         -OverlayContent $demoOverlay `
         -RemoteEnvFile "$Script:RemoteRepo/core/.env"
     Write-Host "[$ServerLabel] Demo UI overlay applied." -ForegroundColor Green
+}
+
+# -- Set-JupyterHubOidcOverlay ------------------------------------------------
+# When a custom domain is active, give Keycloak the JupyterHub public URL and
+# the OIDC client secret from SSM. Both are written to core/.env; the keycloak
+# service (docker-compose.base.auth.yaml) passes them into the container, where
+# the realm import resolves the jupyterhub client's placeholders
+# (${JUPYTERHUB_PUBLIC_URL:...} redirect/web origin, ${JUPYTERHUB_OIDC_CLIENT_SECRET:...}).
+# Only takes effect on a fresh realm import (KEYCLOAK_IMPORT_STRATEGY=IGNORE_EXISTING).
+# The hub side (biar-jupyterhub.env on Server C) is configured separately.
+#
+# No-op when $JupyterPublicUrl is empty (custom domain not enabled).
+function Set-JupyterHubOidcOverlay {
+    param(
+        [string]$InstanceId,
+        [string]$JupyterPublicUrl,
+        [string]$ServerLabel = 'Server A'
+    )
+
+    if (-not $JupyterPublicUrl) { return }
+
+    Write-Host "[$ServerLabel] Applying JupyterHub OIDC overlay (public URL + client secret from SSM)..."
+    $jhOverlay = "JUPYTERHUB_PUBLIC_URL=$JupyterPublicUrl"
+    $jhSecret = aws ssm get-parameter `
+        --name /tazama/creds/jupyterhub/oidc-client-secret `
+        --with-decryption `
+        --region $Script:AwsRegion `
+        --profile $Script:AwsProfile `
+        --query Parameter.Value `
+        --output text 2>$null
+    if ($LASTEXITCODE -eq 0 -and $jhSecret) {
+        $jhOverlay += "`nJUPYTERHUB_OIDC_CLIENT_SECRET=$jhSecret"
+    } else {
+        # Blank the key so a stale secret from an earlier run cannot survive;
+        # compose ${JUPYTERHUB_OIDC_CLIENT_SECRET:-...} treats empty as unset.
+        $jhOverlay += "`nJUPYTERHUB_OIDC_CLIENT_SECRET="
+        Write-Warning "[$ServerLabel] /tazama/creds/jupyterhub/oidc-client-secret not found in SSM - a fresh realm import uses the committed test secret. Set it with: aws ssm put-parameter --name /tazama/creds/jupyterhub/oidc-client-secret --type SecureString --value <openssl rand -hex 32>"
+    }
+    Set-RemoteEnvOverlay -InstanceId $InstanceId `
+        -OverlayContent $jhOverlay `
+        -RemoteEnvFile "$Script:RemoteRepo/core/.env"
+    Write-Host "[$ServerLabel] JupyterHub OIDC overlay applied." -ForegroundColor Green
 }
 
 # -- Set-SmtpOverlay ----------------------------------------------------------
@@ -301,7 +352,8 @@ function Set-SmtpOverlay {
 #   Server A : extensions/.env (host names, public API URLs, CORS) unless
 #              -SkipExtensionsOverlay; KEYCLOAK_HOSTNAME in core/.env; strips
 #              KC_HOSTNAME_PORT from keycloak.env; and the tazama-demo public
-#              URL + NEXTAUTH_SECRET (see Set-DemoUiOverlay).
+#              URL + NEXTAUTH_SECRET (see Set-DemoUiOverlay); the JupyterHub
+#              public URL + OIDC client secret (see Set-JupyterHubOidcOverlay).
 #   Server B : extensions/.env overlay; CMS SMTP credentials from SSM (see
 #              Set-SmtpOverlay).
 #   Server C : biar/.env overlay (host names, S3A_ENDPOINT, COUCHDB_URL).
@@ -349,6 +401,9 @@ function Set-ServerEnvOverlays {
 
             # core/.env: tazama-demo public URL + NEXTAUTH_SECRET (custom domain only)
             Set-DemoUiOverlay -InstanceId $InstanceId -DemoPublicUrl $TofuOutputs.DemoPublicUrl -ServerLabel $label
+
+            # core/.env: JupyterHub public URL + OIDC client secret for the realm import (custom domain only)
+            Set-JupyterHubOidcOverlay -InstanceId $InstanceId -JupyterPublicUrl $TofuOutputs.JupyterPublicUrl -ServerLabel $label
         }
         'B' {
             # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
