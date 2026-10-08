@@ -186,14 +186,18 @@ function Set-RemoteEnvOverlay {
     #      cannot break the sed expression.
     #   3. Use an explicit if/then/else instead of "&& ... ||" so a sed failure
     #      does not trigger the append branch and create duplicate KEY= lines.
+    #   4. Escape \ and & in the sed replacement copy only (sed treats & as the
+    #      matched text and \ as an escape); the append branch writes the raw value.
     $bashLines = foreach ($line in $lines) {
         $key   = ($line -split '=', 2)[0].Trim()
         $value = ($line -split '=', 2)[1].Trim()
         # Escape single quotes for POSIX shell: ' -> '\''.
         $vEsc  = $value -replace "'", "'\''" 
+        # sed escaping must precede quote escaping, which itself introduces a \.
+        $vSed  = ($value -replace '\\', '\\' -replace '&', '\&') -replace "'", "'\''"
         # \x01 is used as the sed delimiter; it cannot appear in env values.
         "if grep -q '^${key}=' ${RemoteEnvFile}; then " +
-        "sed -i 's`u{1}^${key}=.*`u{1}${key}=${vEsc}`u{1}' ${RemoteEnvFile}; " +
+        "sed -i 's`u{1}^${key}=.*`u{1}${key}=${vSed}`u{1}' ${RemoteEnvFile}; " +
         "else printf '%s\n' '${key}=${vEsc}' >> ${RemoteEnvFile}; fi"
     }
     $batchCmd = $bashLines -join '; '
@@ -231,6 +235,9 @@ function Set-DemoUiOverlay {
     if ($LASTEXITCODE -eq 0 -and $demoSecret) {
         $demoOverlay += "`nDEMO_NEXTAUTH_SECRET=$demoSecret"
     } else {
+        # Blank the key so a stale secret from an earlier run cannot survive;
+        # compose ${DEMO_NEXTAUTH_SECRET:-...} treats empty as unset.
+        $demoOverlay += "`nDEMO_NEXTAUTH_SECRET="
         Write-Warning "[$ServerLabel] /tazama/nextauth_secret not found in SSM - demo UI falls back to the committed test secret. Set it with: aws ssm put-parameter --name /tazama/nextauth_secret --type SecureString --value <openssl rand -base64 32>"
     }
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
@@ -270,6 +277,9 @@ function Set-JupyterHubOidcOverlay {
     if ($LASTEXITCODE -eq 0 -and $jhSecret) {
         $jhOverlay += "`nJUPYTERHUB_OIDC_CLIENT_SECRET=$jhSecret"
     } else {
+        # Blank the key so a stale secret from an earlier run cannot survive;
+        # compose ${JUPYTERHUB_OIDC_CLIENT_SECRET:-...} treats empty as unset.
+        $jhOverlay += "`nJUPYTERHUB_OIDC_CLIENT_SECRET="
         Write-Warning "[$ServerLabel] /tazama/creds/jupyterhub/oidc-client-secret not found in SSM - a fresh realm import uses the committed test secret. Set it with: aws ssm put-parameter --name /tazama/creds/jupyterhub/oidc-client-secret --type SecureString --value <openssl rand -hex 32>"
     }
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
