@@ -85,3 +85,8 @@ output "demo_public_url" {
   description = "Browser-facing base URL for the Tazama demo UI: https://demo.<domain_zone> when custom domain is active. Empty otherwise (local-dev defaults apply)."
   value       = var.enable_custom_domain ? "https://demo.${var.domain_zone}" : ""
 }
+
+output "jupyter_public_url" {
+  description = "Browser-facing base URL for JupyterHub: https://jupyter.<domain_zone> when custom domain is active. Used for the Keycloak jupyterhub client redirect URI. Empty otherwise (local-dev defaults apply)."
+  value       = var.enable_custom_domain ? "https://jupyter.${var.domain_zone}" : ""
+}

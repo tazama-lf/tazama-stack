@@ -23,6 +23,7 @@
   - [7.2. Exporting the Keycloak Tazama realm](#72-exporting-the-keycloak-tazama-realm)
   - [7.3. Docker Compose YAML structure](#73-docker-compose-yaml-structure)
   - [7.4. Adding tenants and users to Keycloak](#74-adding-tenants-and-users-to-keycloak)
+  - [7.5. Keycloak realm defaults and the JupyterHub client](#keycloak-realm-defaults-and-the-jupyterhub-client)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -653,6 +654,9 @@ in your `tazama-stack` repository folder, or you must update the volume string i
 
 (This change assumes you exported the new realm to the root of the `tazama-stack` repository folder.)
 
+> [!IMPORTANT]
+> An export contains resolved values where the committed realm file has `${...}` placeholders (the `jupyterhub` client secret and URLs). Restore the placeholders before you commit an export. See [Maintaining the realm file](#maintaining-the-realm-file).
+
 <div style="text-align: right"><a href="#top">Top</a></div>
 
 ## Docker Compose YAML structure
@@ -854,5 +858,83 @@ KEYCLOAK GROUP ASSIGNMENTS
   ...
 ==================================================
 ```
+
+<div style="text-align: right"><a href="#top">Top</a></div>
+
+## Keycloak realm defaults and the JupyterHub client
+
+The `tazama` realm is imported from [`auth/keycloak/realms/00-tazama-test-realm.json`](./auth/keycloak/realms/00-tazama-test-realm.json) when the Keycloak container starts (`start-dev --import-realm`). This section describes the defaults in that file, how to change them, and how to keep the file healthy.
+
+> [!WARNING]
+> All defaults below are public test values committed to git. Change them on any deployment that is reachable by anyone other than you.
+
+### Default users
+
+Every human user in the realm has the password **`password`**:
+
+| Username | Groups |
+|---|---|
+| `tazama-user@tazama.org` | `/tazama-batch`, `/tazama-conditions`, `/tazama-config`, `/tazama-reports`, `/tazama-tms` (attribute `TENANT_ID=DEFAULT`) |
+| `tenant-001-user`, `tenant-002-user` | `/tazama-conditions`, `/tazama-tms`, `/tazama-config`, `/tazama-reports` - each in its own `tenant-00x` subgroup |
+| `cms-administrator@tazama.org`, `cms-compliance-officer@tazama.org`, `cms-investigator@tazama.org`, `cms-supervisor@tazama.org` | The matching `/tazama-cms/<ROLE>` group |
+| `tcs-approver@tazama.org`, `tcs-editor@tazama.org`, `tcs-exporter@tazama.org`, `tcs-publisher@tazama.org` | The matching `/tazama-tcs/<role>` group |
+| `trs-approver@tazama.org`, `trs-editor@tazama.org`, `trs-publisher@tazama.org` | The matching `/tazama-trs/<role>` group |
+| `jupyter-user@tazama.org` | `/tazama-jupyter/JUPYTER_USER/TAZAMA.ORG` |
+
+`service-account-auth-lib-client` is the service account of the `auth-lib-client` client and has no password.
+
+The Keycloak administrator (`admin` / `password`) is not part of this file. Keycloak creates it in its built-in `master` realm from `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD` in [`env/keycloak.env`](./env/keycloak.env).
+
+### JupyterHub objects
+
+The realm contains everything the BIAR JupyterHub needs to log users in through Keycloak (see the [BIAR README](../biar/README.md) for the hub side):
+
+| Object | Purpose |
+|---|---|
+| Realm roles `JUPYTER_USER`, `JUPYTER_ADMIN` | JupyterHub admits holders of either role; `JUPYTER_ADMIN` holders become hub administrators. |
+| Group `tazama-jupyter` with role groups `JUPYTER_USER` and `JUPYTER_ADMIN` | Each role group carries the realm role of the same name, so members of any subgroup inherit it. |
+| Org subgroups `TAZAMA.ORG` under each role group | Attribute `TENANT_ID=TAZAMA`. Users are placed here, never directly in the role group. |
+| Client `jupyterhub` | Confidential client, standard (authorization code) flow only. |
+| Protocol mapper `realm-roles-userinfo` on that client | Puts the realm roles in a flat `roles` claim in the userinfo response. Keycloak does not do this by default, and without it JupyterHub rejects every login. |
+| User `jupyter-user@tazama.org` | Test user with `JUPYTER_USER` access. |
+
+### Deployment-specific values
+
+Two settings of the `jupyterhub` client differ per deployment. The realm file holds placeholders for them, which Keycloak resolves from its own container environment during the import:
+
+| Realm file placeholder | Keycloak container variable | Local default | Used for |
+|---|---|---|---|
+| `${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}` | `JUPYTERHUB_PUBLIC_URL` | `http://localhost:8000` | Redirect URI (`<url>/hub/oauth_callback`), web origin and post-logout redirect |
+| `${JUPYTERHUB_OIDC_CLIENT_SECRET:jupyterhub-test-secret}` | `JUPYTERHUB_OIDC_CLIENT_SECRET` | `jupyterhub-test-secret` | Client secret |
+
+The `keycloak` service in [`docker-compose.base.auth.yaml`](./docker-compose.base.auth.yaml) passes both variables through from `core/.env` (or the shell), falling back to the local defaults. To change them, set them in `core/.env` before the realm is first imported:
+
+```
+JUPYTERHUB_PUBLIC_URL=https://jupyter.example.org
+JUPYTERHUB_OIDC_CLIENT_SECRET=<a long random value>
+```
+
+The hub must use the same values: `JUPYTERHUB_PUBLIC_URL` and `KEYCLOAK_CLIENT_SECRET` in `biar/env/biar-jupyterhub.env`. The local defaults on both sides already match.
+
+On the AWS deployment, `deploy-core.ps1` writes these values to `core/.env` on Server A automatically (see `Set-JupyterHubOidcOverlay` in the [AWS deployment instructions](../infra/aws/aws-deployment-instructions.md)).
+
+### When changes take effect
+
+Keycloak runs with `KEYCLOAK_IMPORT_STRATEGY=IGNORE_EXISTING`, so the realm file and the placeholder variables are only read when the `tazama` realm does not exist yet. Keycloak keeps its data inside the container, so the realm is imported again only after the container is removed:
+
+```
+docker rm -f keycloak
+```
+
+Then start the stack again. This also discards every user, password and setting changed in the running Keycloak since the last import.
+
+To change a running realm without losing data, use the Keycloak Administration Console (`http://localhost:8080`, `admin` / `password`) instead, for example **Clients > jupyterhub** for the redirect URI and the secret, or **Users** to reset a password.
+
+### Maintaining the realm file
+
+- **Keep the placeholders.** An export of a running realm (see [Exporting the Keycloak Tazama realm](#exporting-the-keycloak-tazama-realm)) contains the resolved values, including the live client secret, instead of the `${...}` placeholders. Before you commit an export as `00-tazama-test-realm.json`, put the two placeholders back on the `jupyterhub` client (`secret`, `redirectUris`, `webOrigins` and the `post.logout.redirect.uris` attribute), and check that no real secret or password is left in the file.
+- **Placeholder syntax.** Keycloak replaces `${NAME:default}` with the value of the environment variable `NAME`, or with `default` if it is not set. Values such as `${role_offline-access}` are Keycloak message keys and must be left unchanged.
+- **Passwords in the file.** Users are defined with a plain-text `credentials` entry (`"type": "password"`, `"temporary": false`). Keycloak hashes the value on import.
+- **Granting JupyterHub access to a tenant.** The [tenant scripts](#adding-tenants-and-users-to-keycloak) do not create JupyterHub groups. Add an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) under `/tazama-jupyter/JUPYTER_USER` and/or `/tazama-jupyter/JUPYTER_ADMIN`, and put the users in it. No JupyterHub configuration change is needed.
 
 <div style="text-align: right"><a href="#top">Top</a></div>

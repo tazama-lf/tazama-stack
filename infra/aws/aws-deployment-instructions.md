@@ -1479,12 +1479,13 @@ before moving on to the next. The runnable scripts are, in order:
 
 | Function | Purpose |
 |---|---|
-| `Get-TofuOutputs` | Runs `tofu output -json` and returns a hashtable of instance IDs, private IPs, the EICE endpoint ID, and (when present) the ALB DNS name, Keycloak hostname, and demo public URL |
+| `Get-TofuOutputs` | Runs `tofu output -json` and returns a hashtable of instance IDs, private IPs, the EICE endpoint ID, and (when present) the ALB DNS name, Keycloak hostname, demo public URL, and JupyterHub public URL |
 | `Invoke-RemoteCommand` | SSH to an EC2 instance via EICE ProxyCommand and run a shell command |
 | `Copy-ToRemote` | SCP a file to an EC2 instance via EICE |
 | `Set-RemoteEnvOverlay` | Reads a `KEY=VALUE` overlay (from a local file via `-OverlayFile` or an inline string via `-OverlayContent`) and applies each entry to a remote `.env` using `sed` (replaces existing keys, appends missing ones). Exactly one of the two parameters must be supplied. |
 | `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL and sources `NEXTAUTH_SECRET` from SSM into `core/.env`. No-op when no custom domain is active. |
-| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays (`env-extensions.tpl` / `env-biar.tpl`, `KEYCLOAK_HOSTNAME`, `KC_HOSTNAME_PORT` strip, demo UI overlay) - used after any `git reset --hard` on the target server |
+| `Set-JupyterHubOidcOverlay` | Writes the JupyterHub public URL and the OIDC client secret (from SSM) into `core/.env` for the Keycloak realm import of the `jupyterhub` client. No-op when no custom domain is active. |
+| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays (`env-extensions.tpl` / `env-biar.tpl`, `KEYCLOAK_HOSTNAME`, `KC_HOSTNAME_PORT` strip, demo UI overlay, JupyterHub OIDC overlay) - used after any `git reset --hard` on the target server |
 | `Wait-Bootstrap` | Polls every 30 s until `/home/ec2-user/.bootstrap-complete` exists on the remote instance |
 
 **EICE SSH ProxyCommand used internally:**
@@ -1745,12 +1746,13 @@ Provides the following functions:
 
 | Function | Description |
 |---|---|
-| `Get-TofuOutputs` | Runs `tofu output -json` and returns a hashtable of instance IDs, private IPs, the EICE endpoint ID, and (when present) the ALB DNS name, Keycloak hostname, and demo public URL |
+| `Get-TofuOutputs` | Runs `tofu output -json` and returns a hashtable of instance IDs, private IPs, the EICE endpoint ID, and (when present) the ALB DNS name, Keycloak hostname, demo public URL, and JupyterHub public URL |
 | `Invoke-RemoteCommand` | SSH to an EC2 instance via the EICE ProxyCommand and runs a bash command; throws on non-zero exit |
 | `Copy-ToRemote` | SCP a local file to an EC2 instance via EICE |
 | `Set-RemoteEnvOverlay` | Reads a `KEY=VALUE` overlay (from a local file via `-OverlayFile` or an inline string via `-OverlayContent`) and applies each entry to a remote `.env` file using `sed` (replaces existing keys, appends missing ones). Exactly one of the two parameters must be supplied. |
 | `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL (`DEMO_PUBLIC_URL`) and sources `DEMO_NEXTAUTH_SECRET` from SSM into `core/.env`. No-op when no custom domain is active. Shared by deploy-core, deploy-service, and restart-service. |
-| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays after a `git reset --hard` restores committed local-dev defaults: `env-extensions.tpl` (A and B), `env-biar.tpl` (C), `KEYCLOAK_HOSTNAME` injection and `KC_HOSTNAME_PORT` strip (A), and the demo UI overlay (A). |
+| `Set-JupyterHubOidcOverlay` | Writes `JUPYTERHUB_PUBLIC_URL` (`https://jupyter.<your-zone>`) and `JUPYTERHUB_OIDC_CLIENT_SECRET` (from SSM `/tazama/creds/jupyterhub/oidc-client-secret`) into `core/.env` on Server A. Keycloak resolves both into the `jupyterhub` client when it imports the realm. No-op when no custom domain is active; warns and leaves the committed test secret in place if the SSM parameter is missing. |
+| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays after a `git reset --hard` restores committed local-dev defaults: `env-extensions.tpl` (A and B), `env-biar.tpl` (C), `KEYCLOAK_HOSTNAME` injection and `KC_HOSTNAME_PORT` strip (A), the demo UI overlay (A), and the JupyterHub OIDC overlay (A). |
 | `Wait-Bootstrap` | Polls an instance until the bootstrap script has written its completion marker (up to 15 min) |
 
 (`New-SshConfig` is an internal helper that writes the temporary per-connection SSH config with the EICE ProxyCommand; it is not called by other scripts directly.)
@@ -1812,8 +1814,8 @@ Deploys the **tazama-core** stack on Server A.  Steps:
 1. Waits for Server A bootstrap to complete.
 2. Pulls latest repo on Server A.
 3. Copies `core/.env` to Server A; optionally applies a credentials overlay.
-4. Injects `KEYCLOAK_HOSTNAME` from tofu outputs (if an ALB is active).
-5. Copies the Keycloak realm JSON to Server A.
+4. Injects `KEYCLOAK_HOSTNAME` from tofu outputs (if an ALB is active) and, when a custom domain is active, the tazama-demo and JupyterHub OIDC overlays into `core/.env`.
+5. Copies the Keycloak realm JSON to Server A. Keycloak imports it only if the `tazama` realm does not exist yet (see [the realm FAQ](#ive-set-up-some-users-on-keycloak-already---how-can-i-save-these-if-i-want-to-redeploy-the-system-somewhere-else-or-in-the-future)).
 6. Starts the full core stack (infrastructure, rules, TP, TMS, auth, relay, logs, pgAdmin, Hasura) with up to 3 retries to handle the Postgres startup race condition.
 
 ```powershell
@@ -2069,7 +2071,7 @@ lives in the same chain (`docker-compose.extensions.infrastructure.yaml`).
 | `-Service` | **Required.** The **new** Docker Compose service name to bring up (e.g. `tazama-demo`). Must be defined in the same `-f` chain that `-FromService` uses. |
 | `-FromService` | **Required.** An already-running **sibling** service in the same project, used read-only to discover the working directory and compose file chain. It is never stopped or modified. |
 | `-NoPull` | Skip the DockerHub image pull (`--pull always`). Use when the image is already present on the host. |
-| `-RepoPull` | Controls the repo update on the target server before the service is created. Omitted or `none` — skip (default); `''` or `dev` — fetch and reset to `origin/dev`; `<branch>` — fetch and reset to that branch. A pull is normally required for a new service so its compose definition and env files exist on the server. After the reset, the per-server AWS env overlays are re-applied via the shared `Set-ServerEnvOverlays` helper (`env-extensions.tpl` on A and B, `env-biar.tpl` on C; plus `KEYCLOAK_HOSTNAME` and the demo UI overlay on A). |
+| `-RepoPull` | Controls the repo update on the target server before the service is created. Omitted or `none` — skip (default); `''` or `dev` — fetch and reset to `origin/dev`; `<branch>` — fetch and reset to that branch. A pull is normally required for a new service so its compose definition and env files exist on the server. After the reset, the per-server AWS env overlays are re-applied via the shared `Set-ServerEnvOverlays` helper (`env-extensions.tpl` on A and B, `env-biar.tpl` on C; plus `KEYCLOAK_HOSTNAME`, the demo UI overlay and the JupyterHub OIDC overlay on A). |
 | `-DryRun` | Print every mutating command without executing it. The read-only discovery and verify steps still run, so the resolved compose command and current container state are shown. |
 
 > While the server sits on a feature branch via `-RepoPull <branch>`, a later
@@ -2827,6 +2829,17 @@ Then redeploy extensions:
 > .\deploy-service.ps1 -Server A -Service tazama-demo -FromService tms -RepoPull <demo-branch>
 > ```
 
+> **JupyterHub Keycloak login (`jupyter.<your-zone>`).** JupyterHub logs users in through the `jupyterhub` client of the Keycloak `tazama` realm (authorization code flow), so the client needs the public hub URL as its redirect URI and a secret shared with the hub. The committed realm file holds placeholders for both (local defaults `http://localhost:8000` and `jupyterhub-test-secret`). When `enable_custom_domain = true`:
+>
+> - **Client secret in SSM.** `deploy-core.ps1` reads `/tazama/creds/jupyterhub/oidc-client-secret` (SecureString) and writes it to `core/.env` as `JUPYTERHUB_OIDC_CLIENT_SECRET`. Create it first:
+>   ```powershell
+>   aws ssm put-parameter --name /tazama/creds/jupyterhub/oidc-client-secret --type SecureString --value (openssl rand -hex 32)
+>   ```
+>   If absent, the client keeps the committed test secret (acceptable only for a throwaway sandbox).
+> - **Public URL.** `deploy-core.ps1` sets `JUPYTERHUB_PUBLIC_URL=https://jupyter.<your-zone>` in `core/.env` from the tofu output `jupyter_public_url`. If your state predates that output, run `tofu apply` once (no resource changes) so the output exists; until then the overlay is skipped.
+>
+> Keycloak applies these values **only when it imports the realm**, that is on a fresh Keycloak container. On a running realm, change the `jupyterhub` client in the Keycloak Administration Console instead, or force a reimport (see the [realm FAQ](#ive-set-up-some-users-on-keycloak-already---how-can-i-save-these-if-i-want-to-redeploy-the-system-somewhere-else-or-in-the-future)). The hub side on Server C must use the same values - see [F.6](#f6-server-c-validation).
+
 #### E.3.8 Rollback
 
 To remove the custom domain, omit `domain.tfvars`:
@@ -2974,7 +2987,7 @@ If this returns `000` (connection failure), check two things:
 - NiFi UI: http://localhost:8088/nifi - login with `admin` / `admin123456789`
 - Solr admin: http://localhost:8983/solr
 - Ozone Recon: http://localhost:9888
-- JupyterHub: http://localhost:8000 - see first-time setup note below
+- JupyterHub: http://localhost:8000 - see the login note below
 
 ```powershell
 # Automation Orchestrator API (FastAPI)
@@ -2987,7 +3000,18 @@ Invoke-RestMethod http://localhost:8282/health
 Invoke-RestMethod http://localhost:8000/hub/health
 ```
 
-> **JupyterHub first-time setup:** Signup is disabled by default (`open_signup = False`). The first admin account must be created and then authorized manually:
+> **JupyterHub login (Keycloak mode, the default).** Open `https://jupyter.<your-zone>`; JupyterHub sends you to the Keycloak login page. Accounts are Keycloak users with the `JUPYTER_USER` or `JUPYTER_ADMIN` realm role, granted through the `/tazama-jupyter/JUPYTER_USER/<ORG>` and `/tazama-jupyter/JUPYTER_ADMIN/<ORG>` groups. The realm import includes the test user `jupyter-user@tazama.org` / `password`; change its password or remove it on any shared deployment. There is no sign-up and no `/hub/authorize` approval step. See [biar/README.md section 9.4](../../biar/README.md#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance).
+>
+> **Hub settings on Server C.** `biar/env/biar-jupyterhub.env` must point at the public Keycloak and hub URLs and use the same client secret as the realm. `deploy-biar.ps1` does not overlay this file yet (tracked in [#285](https://github.com/tazama-lf/tazama-stack/issues/285)), and its `git reset --hard` restores the committed local defaults. After each `deploy-biar.ps1`, set these values on Server C and recreate `biar-jupyterhub`:
+>
+> | Variable | Value |
+> |---|---|
+> | `KEYCLOAK_ISSUER_URL` | `https://keycloak.<your-zone>/realms/tazama` |
+> | `JUPYTERHUB_PUBLIC_URL` | `https://jupyter.<your-zone>` |
+> | `KEYCLOAK_CLIENT_SECRET` | SSM `/tazama/creds/jupyterhub/oidc-client-secret` |
+> | `JUPYTERHUB_CRYPT_KEY` | SSM `/tazama/creds/jupyterhub/crypt_key` (create with `openssl rand -hex 32`) |
+>
+> **Native mode (`JUPYTERHUB_AUTH=native` only).** The rest of this note applies only if you switch the hub back to the native sign-up authenticator. Signup is disabled by default (`open_signup = False`). The first admin account must be created and then authorized manually:
 >
 > 1. Go to `http://localhost:8000/hub/signup` (or `https://jupyter.<your-zone>/hub/signup`)
 > 2. Sign up using the `JUPYTERHUB_ADMIN` username (default: `admin`, overridden by the `JUPYTERHUB_ADMIN` env var in `biar-jupyterhub.env`)
@@ -3709,6 +3733,9 @@ Remove-Item $configPath
 ```
 
 **Step 3 - Commit and push:**
+
+> [!IMPORTANT]
+> The export contains resolved values where the committed realm file has placeholders: the `jupyterhub` client's `secret` (the live secret from SSM), `redirectUris`, `webOrigins` and `post.logout.redirect.uris` (the live `jupyter.<your-zone>` URL). Before committing, put back `${JUPYTERHUB_OIDC_CLIENT_SECRET:jupyterhub-test-secret}` and `${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}` (keeping the `/hub/oauth_callback` and `/*` suffixes), and check that no other live secret or password is in the file. See [core/README.md - Maintaining the realm file](../../core/README.md#maintaining-the-realm-file).
 
 ```powershell
 cd "tazama-stack"

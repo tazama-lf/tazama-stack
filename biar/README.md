@@ -28,6 +28,7 @@
   - [9.1. NiFi flow management](#91-nifi-flow-management)
   - [9.2. Apache Ozone bucket initialisation](#92-apache-ozone-bucket-initialisation)
   - [9.3. Docker Compose YAML structure](#93-docker-compose-yaml-structure)
+  - [9.4. JupyterHub Keycloak login: defaults, changes and maintenance](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -199,7 +200,7 @@ Tazama BIAR application services. The `hub` variant pulls pre-built images from 
 | Automation Orchestrator | `biar-automation-orchestrator` | 7619 | PySpark-based batch processor and Hudi data lake manager. Writes to the shared warehouse at `TAZAMA_WAREHOUSE_HOST_PATH`. |
 | Datalakehouse API | `biar-datalakehouse-api` | 8282 | FastAPI REST interface for querying the Hudi data lakehouse. Reads from `TAZAMA_WAREHOUSE_HOST_PATH`. |
 | Unstructured Pipeline | `biar-unstructured-pipeline` | — | Document ingestion pipeline that submits files to Tika for parsing and indexes results in Solr (no external port). |
-| JupyterHub | `biar-jupyterhub` | 8000 | Multi-user analytics environment. Each user gets an isolated JupyterLab session with pre-loaded PySpark notebooks. Uses `NativeAuthenticator` (sign-up on first visit). |
+| JupyterHub | `biar-jupyterhub` | 8000 | Multi-user analytics environment. Each user gets an isolated JupyterLab session with pre-loaded PySpark notebooks. Logs users in through Keycloak by default; a `native` sign-up mode is also available (see [9.4](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance)). |
 
 > [!NOTE]
 > `TAZAMA_WAREHOUSE_HOST_PATH` in `biar/.env` controls where the Hudi warehouse is stored on the host. In the AWS deployment this is `/opt/Warehouse` (created by `deploy-biar.ps1`). In a local deployment, set this to any directory you have write access to.
@@ -247,7 +248,8 @@ After a successful deployment, the following interfaces are accessible from `loc
 
 #### JupyterHub
 - JupyterHub UI: <http://localhost:8000>
-- On first visit, use the **Sign up** form to create an account. The first user whose name matches `JUPYTERHUB_ADMIN` in `env/biar-jupyterhub.env` (default: `admin`) is automatically granted admin rights.
+- Log in with a Keycloak account that has the `JUPYTER_USER` or `JUPYTER_ADMIN` role. The default test user is `jupyter-user@tazama.org` / `password` (see [9.4](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance)).
+- In `native` mode only (`JUPYTERHUB_AUTH=native`): on first visit, use the **Sign up** form to create an account. The first user whose name matches `JUPYTERHUB_ADMIN` in `env/biar-jupyterhub.env` (default: `admin`) is automatically granted admin rights.
 - Each user gets an isolated JupyterLab environment with the shared read-only notebooks pre-loaded from `/srv/notebooks/`.
 
 <div style="text-align: right"><a href="#top">Top</a></div>
@@ -257,6 +259,9 @@ After a successful deployment, the following interfaces are accessible from `loc
 JupyterHub provides a multi-user analytics environment pre-loaded with PySpark notebooks that query the Tazama Hudi data lakehouse. Each user gets their own isolated JupyterLab process; user accounts and server state persist across container restarts.
 
 ## 7.1. Create your account
+
+> [!NOTE]
+> This section applies only to `native` mode (`JUPYTERHUB_AUTH=native`). In the default Keycloak mode there is no sign-up: JupyterHub sends you to the Keycloak login page, and accounts are managed in Keycloak. See [9.4](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance).
 
 1. Open JupyterHub at <http://localhost:8000> (or `http://<Server C>:8000` in a multi-server deployment).
 2. Click **Sign up** on the login page.
@@ -325,6 +330,9 @@ These defaults match the values in `biar/env/biar-jupyterhub.env` and the Ozone 
 > Each user's Spark session starts a JVM on first notebook execution. Expect a 20–30 second delay before the first cell produces output. Subsequent cells in the same session run much faster.
 
 ## 7.5. Admin: approve pending users
+
+> [!NOTE]
+> This section applies only to `native` mode. In Keycloak mode, access is granted through Keycloak group membership. See [9.4](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance).
 
 If `open_signup` is disabled, new user registrations will be in a **pending** state until an admin approves them.
 
@@ -418,5 +426,69 @@ The BIAR stack uses three compose files composed together:
 | `docker-compose.utils.init.yaml` | Init containers: `ozone-aws-cli` (Ozone bucket creation), `biar-nifi-init` (NiFi flow injection) |
 
 View [docker-yaml-structure.md](./docker-yaml-structure.md) for additional detail about the Docker Compose files in the wider Tazama repository.
+
+## 9.4. JupyterHub Keycloak login: defaults, changes and maintenance
+
+By default (`JUPYTERHUB_AUTH=keycloak`), JupyterHub logs users in through the `jupyterhub` client of the Keycloak `tazama` realm, which is part of the core stack. The core stack must therefore be running with the Authentication services. The realm side (client, roles, groups and test user) is described in [Keycloak realm defaults and the JupyterHub client](../core/README.md#keycloak-realm-defaults-and-the-jupyterhub-client) in the core README.
+
+> [!WARNING]
+> The defaults below are public test values committed to git. Change them on any deployment that is reachable by anyone other than you.
+
+### Defaults
+
+The hub settings are in [`env/biar-jupyterhub.env`](./env/biar-jupyterhub.env):
+
+| Variable | Default | Must match |
+|---|---|---|
+| `JUPYTERHUB_AUTH` | `keycloak` | - (`native` restores the sign-up behaviour in [7.1](#71-create-your-account)) |
+| `KEYCLOAK_ISSUER_URL` | `http://localhost:8080/realms/tazama` | The Keycloak URL and realm |
+| `JUPYTERHUB_PUBLIC_URL` | `http://localhost:8000` | `JUPYTERHUB_PUBLIC_URL` of the Keycloak container (the client's redirect URI is `<url>/hub/oauth_callback`) |
+| `KEYCLOAK_CLIENT_ID` | `jupyterhub` | The client ID in the realm |
+| `KEYCLOAK_CLIENT_SECRET` | `jupyterhub-test-secret` | `JUPYTERHUB_OIDC_CLIENT_SECRET` of the Keycloak container |
+| `JUPYTERHUB_CRYPT_KEY` | `changeme` (placeholder) | - |
+
+The committed defaults on the hub side and the realm side match each other, so no change is needed to log in with the defaults.
+
+`JUPYTERHUB_CRYPT_KEY` encrypts the stored login state and is required in Keycloak mode. JupyterHub only accepts a 32-byte key in hex or base64, so replace the placeholder with a generated key:
+
+```
+openssl rand -hex 32
+```
+
+**Test login:** `jupyter-user@tazama.org` / `password` (role `JUPYTER_USER`). The default realm has no `JUPYTER_ADMIN` user.
+
+> [!NOTE]
+> The `jupyterhub` container calls `KEYCLOAK_ISSUER_URL` itself (token and userinfo requests), and the browser is also sent there. Inside a container, `localhost` is the container itself, so with the default value these calls cannot reach Keycloak when it runs in another container on the same machine. Use an address that both your browser and the container can resolve to Keycloak.
+
+### Who can log in
+
+JupyterHub admits users with the realm role `JUPYTER_USER` or `JUPYTER_ADMIN`; `JUPYTER_ADMIN` holders are hub administrators. `JUPYTERHUB_ADMIN` is only used in `native` mode. Users get the roles through group membership in Keycloak:
+
+- `/tazama-jupyter/JUPYTER_USER/<ORG>` - regular access
+- `/tazama-jupyter/JUPYTER_ADMIN/<ORG>` - administrator access
+
+To give someone access, add them to one of these org subgroups in the Keycloak Administration Console (**Users > _user_ > Groups > Join group**). To onboard another tenant, create an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) under the role group first. No JupyterHub change or restart is needed.
+
+JupyterHub user names are the Keycloak `preferred_username` (email style). Home directories created under `native` mode user names are not migrated.
+
+### Changing the defaults
+
+| To change | Hub side (`env/biar-jupyterhub.env`) | Keycloak side |
+|---|---|---|
+| Public hub URL | `JUPYTERHUB_PUBLIC_URL` | `JUPYTERHUB_PUBLIC_URL` in `core/.env` before the realm import, or the client's redirect URI, web origin and post-logout redirect in the running realm |
+| Client secret | `KEYCLOAK_CLIENT_SECRET` | `JUPYTERHUB_OIDC_CLIENT_SECRET` in `core/.env` before the realm import, or **Clients > jupyterhub > Credentials** in the running realm |
+| Keycloak address | `KEYCLOAK_ISSUER_URL` | - |
+| Encryption key | `JUPYTERHUB_CRYPT_KEY` | - |
+
+After changing the hub side, recreate the container to load the new values:
+
+```
+docker compose -p tazama-biar -f docker-compose.biar.infrastructure.yaml -f docker-compose.hub.biar.yaml up -d --force-recreate biar-jupyterhub
+```
+
+Keycloak reads `core/.env` only when the realm is first imported. See the core README for how to change a running realm or force a reimport.
+
+> [!IMPORTANT]
+> Do not commit real secrets to `env/biar-jupyterhub.env`. Supply them at deploy time from a secret store. On the AWS deployment the client secret is in SSM at `/tazama/creds/jupyterhub/oidc-client-secret` and the encryption key at `/tazama/creds/jupyterhub/crypt_key`.
 
 <div style="text-align: right"><a href="#top">Top</a></div>

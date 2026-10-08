@@ -444,6 +444,22 @@
       "clientRole" : false,
       "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
       "attributes" : { }
+    }, {
+      "id" : "e3f9a549-5d18-4704-b049-c68baba9cc05",
+      "name" : "JUPYTER_ADMIN",
+      "description" : "",
+      "composite" : false,
+      "clientRole" : false,
+      "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
+      "attributes" : { }
+    }, {
+      "id" : "68dea85b-40c3-4754-b6cc-738bd06de2d9",
+      "name" : "JUPYTER_USER",
+      "description" : "",
+      "composite" : false,
+      "clientRole" : false,
+      "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
+      "attributes" : { }
     } ],
     "client" : {
       "auth-lib-client" : [ {
@@ -832,6 +848,54 @@
     "realmRoles" : [ "POST_V1_ADMIN_CONFIGURATION_TYPOLOGY", "LIST_V1_ADMIN_CONFIGURATION_NETWORK_MAP", "POST_V1_ADMIN_CONFIGURATION_NETWORK_MAP_RELOAD", "GET_V1_ADMIN_CONFIGURATION_NETWORK_MAP", "LIST_V1_ADMIN_CONFIGURATION_TYPOLOGY", "GET_V1_ADMIN_CONFIGURATION_RULE", "GET_V1_ADMIN_CONFIGURATION_TYPOLOGY", "PUT_V1_ADMIN_CONFIGURATION_RULE", "POST_V1_ADMIN_CONFIGURATION_RULE", "POST_V1_ADMIN_CONFIGURATION_NETWORK_MAP_DEACTIVATE", "DELETE_V1_ADMIN_CONFIGURATION_RULE", "POST_V1_ADMIN_CONFIGURATION_NETWORK_MAP_ACTIVATE", "PUT_V1_ADMIN_CONFIGURATION_TYPOLOGY", "LIST_V1_ADMIN_CONFIGURATION_RULE", "DELETE_V1_ADMIN_CONFIGURATION_NETWORK_MAP", "DELETE_V1_ADMIN_CONFIGURATION_TYPOLOGY", "POST_V1_ADMIN_CONFIGURATION_NETWORK_MAP", "PUT_V1_ADMIN_CONFIGURATION_NETWORK_MAP" ],
     "clientRoles" : { }
   }, {
+    "id" : "8dae0c11-1f0e-42da-a55a-f94b435a812e",
+    "name" : "tazama-jupyter",
+    "path" : "/tazama-jupyter",
+    "subGroups" : [ {
+      "id" : "fabe813e-0127-4e02-88e3-97d5cfe76231",
+      "name" : "JUPYTER_ADMIN",
+      "path" : "/tazama-jupyter/JUPYTER_ADMIN",
+      "parentId" : "8dae0c11-1f0e-42da-a55a-f94b435a812e",
+      "subGroups" : [ {
+        "id" : "bddc87a8-12b3-40da-85f7-767507462a4e",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-jupyter/JUPYTER_ADMIN/TAZAMA.ORG",
+        "parentId" : "fabe813e-0127-4e02-88e3-97d5cfe76231",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "TAZAMA" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
+      "attributes" : { },
+      "realmRoles" : [ "JUPYTER_ADMIN" ],
+      "clientRoles" : { }
+    }, {
+      "id" : "4991a900-05dd-4320-b2a5-5286a10787a8",
+      "name" : "JUPYTER_USER",
+      "path" : "/tazama-jupyter/JUPYTER_USER",
+      "parentId" : "8dae0c11-1f0e-42da-a55a-f94b435a812e",
+      "subGroups" : [ {
+        "id" : "59eb981d-6fd3-4e13-b983-09628c536aa0",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-jupyter/JUPYTER_USER/TAZAMA.ORG",
+        "parentId" : "4991a900-05dd-4320-b2a5-5286a10787a8",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "TAZAMA" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
+      "attributes" : { },
+      "realmRoles" : [ "JUPYTER_USER" ],
+      "clientRoles" : { }
+    } ],
+    "attributes" : { },
+    "realmRoles" : [ ],
+    "clientRoles" : { }
+  }, {
     "id" : "70d906a9-8f04-4cfb-9e4f-1235e4fa9131",
     "name" : "tazama-reports",
     "path" : "/tazama-reports",
@@ -1043,7 +1107,11 @@
     "firstName" : "cms",
     "lastName" : "administrator",
     "email" : "cms-administrator@tazama.org",
-    "credentials" : [ ],
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
@@ -1059,7 +1127,11 @@
     "firstName" : "cms",
     "lastName" : "compliance-officer",
     "email" : "cms-compliance-officer@tazama.org",
-    "credentials" : [ ],
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
@@ -1075,7 +1147,11 @@
     "firstName" : "cms",
     "lastName" : "investigator",
     "email" : "cms-investigator@tazama.org",
-    "credentials" : [ ],
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
@@ -1091,12 +1167,35 @@
     "firstName" : "cms",
     "lastName" : "supervisor",
     "email" : "cms-supervisor@tazama.org",
-    "credentials" : [ ],
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
     "groups" : [ "/tazama-cms/CMS_SUPERVISOR" ]
+  }, {
+    "id" : "bc984bd8-340e-40ef-8b51-ccc0f4e17dc1",
+    "username" : "jupyter-user@tazama.org",
+    "enabled" : true,
+    "totp" : false,
+    "emailVerified" : true,
+    "firstName" : "jupyter",
+    "lastName" : "user",
+    "email" : "jupyter-user@tazama.org",
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-tazama" ],
+    "notBefore" : 0,
+    "groups" : [ "/tazama-jupyter/JUPYTER_USER/TAZAMA.ORG" ]
   }, {
     "id" : "1c62ea61-ac86-4a8d-8720-0bf503124ede",
     "createdTimestamp" : 1721648133968,
@@ -1126,12 +1225,9 @@
       "TENANT_ID" : [ "DEFAULT" ]
     },
     "credentials" : [ {
-      "id" : "a3e6fc0d-9243-4d1f-a41d-e38c47ff692f",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1725551583924,
-      "secretData" : "{\"value\":\"Fiu7IZUGSqC4iAHwlnsl69nY1RbityCFs9ywgEZ3N80=\",\"salt\":\"MnXcx9m3nJ8mmZ/c+8ZbCQ==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1149,12 +1245,9 @@
     "lastName" : "approver",
     "email" : "tcs-approver@tazama.org",
     "credentials" : [ {
-      "id" : "37d0b49e-3154-47f3-bf0d-5e2525a9e65b",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776319960765,
-      "secretData" : "{\"value\":\"o2WV7OFstE065MgOi40OJrwq9EVwCCoHBL25+yEOxrI=\",\"salt\":\"Nj//xCb48EYytYH2a3+m2Q==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1172,12 +1265,9 @@
     "lastName" : "editor",
     "email" : "tcs-editor@tazama.org",
     "credentials" : [ {
-      "id" : "8861c9d6-bf5a-4828-92f1-5dddf05f3c32",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776319876944,
-      "secretData" : "{\"value\":\"vxOBMHrn8Aug1aYMOHgnw4U/dZOEwGCSlzsqaQ/RMhY=\",\"salt\":\"rmHSUrzHyPRzqomI/fzElQ==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1195,12 +1285,9 @@
     "lastName" : "exporter",
     "email" : "tcs-exporter@tazama.org",
     "credentials" : [ {
-      "id" : "d524e208-03d3-4d37-bef4-99582a84c407",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776320071722,
-      "secretData" : "{\"value\":\"zTnJwk9ket6SHhDUrda2qVI1ZBmgv9xCf1GzlmLyAyo=\",\"salt\":\"YmJEGX8r67ZPL+BXE+IXNQ==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1218,12 +1305,9 @@
     "lastName" : "publisher",
     "email" : "tcs-publisher@tazama.org",
     "credentials" : [ {
-      "id" : "08303482-a7f5-4422-9460-c7afa6bb56c4",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776320013301,
-      "secretData" : "{\"value\":\"aWKvwEpsqIuut/tyTXNyQOsxBcU+8YUvdU0mAafrA9Y=\",\"salt\":\"+4JF/U0eTacYp5zP2AszEg==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1239,12 +1323,9 @@
     "emailVerified" : true,
     "email" : "tenant-001-user@tazama.org",
     "credentials" : [ {
-      "id" : "1f2806d2-90a7-4a3d-a3ba-29000167d50f",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1758793592478,
-      "secretData" : "{\"value\":\"0lYy9G27+HC3MBmZjncVjzSDQm0K/T2YBPapKMRH7Us=\",\"salt\":\"9a17xTpS7ss+7SeTA7Hj6Q==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1260,12 +1341,9 @@
     "emailVerified" : true,
     "email" : "tenant-002-user@tazama.org",
     "credentials" : [ {
-      "id" : "dc3d3820-4885-4365-ab34-50a04e2d127a",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1758793610183,
-      "secretData" : "{\"value\":\"z5ThplE9ideDdJ/wIvOZbliPnujQ0n9JnxeJoAlk7oY=\",\"salt\":\"uSzFnL2IhesubwoEE+7AOQ==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1283,12 +1361,9 @@
     "lastName" : "approver",
     "email" : "trs-approver@tazama.org",
     "credentials" : [ {
-      "id" : "4ecd509a-8d17-4bf9-b3d0-0017e1f3dbef",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776319745415,
-      "secretData" : "{\"value\":\"ci8dJnbTz3woydZ4BuV6koIb6T3J98bQeyCGkfIMeM0=\",\"salt\":\"SRXIRA6BGxaHCkoNNXeHYg==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1306,12 +1381,9 @@
     "lastName" : "editor",
     "email" : "trs-editor@tazama.org",
     "credentials" : [ {
-      "id" : "c2b1d226-8eaf-411e-8816-9803af819c33",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776315313977,
-      "secretData" : "{\"value\":\"hR0qxSnjYkqjjSUc1QZxRnM15nWbM+ve/fUBSVhfJnk=\",\"salt\":\"SqyVXQLGR40z54ChCsxveQ==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1329,12 +1401,9 @@
     "lastName" : "publisher",
     "email" : "trs-publisher@tazama.org",
     "credentials" : [ {
-      "id" : "b4430464-f4bb-4add-b14e-713ac88e9eac",
       "type" : "password",
-      "userLabel" : "My password",
-      "createdDate" : 1776319806865,
-      "secretData" : "{\"value\":\"kD/jwOZ2PBzKD35htTt/+IS7l6o3NyIZEKcYt8cQhHM=\",\"salt\":\"On9vbxvR6PvaxOBkcNZigg==\",\"additionalParameters\":{}}",
-      "credentialData" : "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+      "value" : "password",
+      "temporary" : false
     } ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
@@ -1598,6 +1667,59 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+  }, {
+    "id" : "9e67d878-b083-41cc-ba1a-ddc3a52dd701",
+    "clientId" : "jupyterhub",
+    "name" : "JupyterHub",
+    "description" : "",
+    "rootUrl" : "",
+    "adminUrl" : "",
+    "baseUrl" : "",
+    "surrogateAuthRequired" : false,
+    "enabled" : true,
+    "alwaysDisplayInConsole" : false,
+    "clientAuthenticatorType" : "client-secret",
+    "secret" : "${JUPYTERHUB_OIDC_CLIENT_SECRET:jupyterhub-test-secret}",
+    "redirectUris" : [ "${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}/hub/oauth_callback" ],
+    "webOrigins" : [ "${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}" ],
+    "notBefore" : 0,
+    "bearerOnly" : false,
+    "consentRequired" : false,
+    "standardFlowEnabled" : true,
+    "implicitFlowEnabled" : false,
+    "directAccessGrantsEnabled" : false,
+    "serviceAccountsEnabled" : false,
+    "publicClient" : false,
+    "frontchannelLogout" : true,
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "oidc.ciba.grant.enabled" : "false",
+      "backchannel.logout.session.required" : "true",
+      "post.logout.redirect.uris" : "${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}/*",
+      "oauth2.device.authorization.grant.enabled" : "false",
+      "backchannel.logout.revoke.offline.tokens" : "false"
+    },
+    "authenticationFlowBindingOverrides" : { },
+    "fullScopeAllowed" : true,
+    "nodeReRegistrationTimeout" : -1,
+    "protocolMappers" : [ {
+      "id" : "da195b83-da82-43da-8666-f64a1c2ae650",
+      "name" : "realm-roles-userinfo",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usermodel-realm-role-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "introspection.token.claim" : "true",
+        "multivalued" : "true",
+        "userinfo.token.claim" : "true",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "roles",
+        "jsonType.label" : "String"
+      }
+    } ],
     "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
