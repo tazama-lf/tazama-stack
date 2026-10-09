@@ -519,6 +519,9 @@ def main():
     group_id_cache = {}  # path -> id
 
     for path in sorted(needed_paths):
+        # Refresh token per path - the master admin token can expire (60s default)
+        if not dry_run:
+            token = get_token(base_url, args.admin_user, args.admin_password)
         parts = path.lstrip("/").split(
             "/"
         )  # ['tazama-cms', 'CMS_ADMIN', 'NEWTENANT.COM']

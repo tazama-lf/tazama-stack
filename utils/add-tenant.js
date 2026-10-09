@@ -374,6 +374,8 @@ async function main() {
   const groupIdCache = {};
 
   for (const path of neededPaths.sort()) {
+    // Refresh token per path - the master admin token can expire (60s default)
+    if (!dryRun) token = await getToken(baseUrl, opts.adminUser, opts.adminPassword);
     const parts = path.replace(/^\//, '').split('/');
     let currentPath = '';
     let parentId = null;
