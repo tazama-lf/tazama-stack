@@ -6,10 +6,14 @@ Usage:
     python add-tenant.py --domain <domain> --tenant-id <TENANT_ID> --password <password>
                          [--keycloak-url <url>] [--admin-user <user>] [--admin-password <pw>]
                          [--realm <realm>] [--dry-run]
+                         [--seed-cms-reference-ids] [--psql-command <cmd>]
+    python add-tenant.py --tenant-id <TENANT_ID> --cms-seed-only [--psql-command <cmd>] [--dry-run]
 
 Examples:
     python add-tenant.py --domain newtenant.com --tenant-id NEWTENANT --password "S3cur3P@ss!"
     python add-tenant.py --domain newtenant.com --tenant-id NEWTENANT --password "S3cur3P@ss!" --dry-run
+    python add-tenant.py --tenant-id NEWTENANT --cms-seed-only \
+        --psql-command "docker exec -i extensions-postgres psql -U postgres -d tazama_cms"
 
 Defaults:
     --keycloak-url   https://keycloak.beta.tazama.org
@@ -21,6 +25,9 @@ Defaults:
 import argparse
 import json
 import os
+import re
+import shlex
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -58,7 +65,20 @@ USER_TEMPLATES = [
             "/tazama-tms/{gd}",
         ],
     ),
+    ("jupyter-user", "Jupyter", "User", ["/tazama-jupyter/JUPYTER_USER/{gd}"]),
 ]
+
+# --------------------------------------------------------------------------- #
+# CMS reference_ids seed (tazama_cms database, extensions deployment)
+# (txTp, referenceIdName)
+# --------------------------------------------------------------------------- #
+CMS_REFERENCE_IDS = [
+    ("pacs.008.001.10", "EndToEndId"),
+    ("pacs.002.001.12", "OrgnlEndToEndId"),
+]
+
+# Tenant IDs are interpolated into SQL; restrict to a safe character set
+TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 # --------------------------------------------------------------------------- #
 # HTTP helpers (stdlib only - no requests dependency)
@@ -350,6 +370,41 @@ def create_user(
         return None
 
 
+def seed_cms_reference_ids(psql_command, tenant_id, dry_run=False):
+    """Insert the basic reference_ids rows for a tenant via psql (stdin).
+    Existing rows for the tenant are left untouched."""
+    values = ",\n".join(
+        f"  ('{tx_tp}', '{ref_name}', '{tenant_id}')"
+        for tx_tp, ref_name in CMS_REFERENCE_IDS
+    )
+    sql = (
+        "\\set ON_ERROR_STOP on\n"
+        'INSERT INTO "reference_ids" ("txTp", "referenceIdName", "tenant_id") VALUES\n'
+        f"{values}\n"
+        'ON CONFLICT ("txTp", "tenant_id") DO NOTHING;\n'
+        'SELECT "id", "txTp", "referenceIdName", "createdAt", "tenant_id"\n'
+        f"  FROM \"reference_ids\" WHERE \"tenant_id\" = '{tenant_id}' ORDER BY \"txTp\";\n"
+    )
+    cmd = shlex.split(psql_command)
+
+    print(f"  {'[DRY-RUN] ' if dry_run else ''}Run: {' '.join(cmd)}")
+    print("  SQL:")
+    for line in sql.splitlines():
+        print(f"    {line}")
+    if dry_run:
+        return True
+
+    try:
+        result = subprocess.run(cmd, input=sql, text=True)
+    except FileNotFoundError:
+        print(f"  ERROR: Command not found: {cmd[0]}")
+        return False
+    if result.returncode != 0:
+        print(f"  ERROR: psql command exited with code {result.returncode}")
+        return False
+    return True
+
+
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
@@ -360,13 +415,15 @@ def main():
         description="Add a new tenant to Keycloak via Admin API"
     )
     parser.add_argument(
-        "--domain", required=True, help="Tenant email domain, e.g. newtenant.com"
+        "--domain",
+        help="Tenant email domain, e.g. newtenant.com (required unless --cms-seed-only)",
     )
     parser.add_argument(
         "--tenant-id", required=True, help="Tenant ID (upper-case), e.g. NEWTENANT"
     )
     parser.add_argument(
-        "--password", required=True, help="Password for all tenant users"
+        "--password",
+        help="Password for all tenant users (required unless --cms-seed-only)",
     )
     parser.add_argument(
         "--keycloak-url",
@@ -383,7 +440,47 @@ def main():
     parser.add_argument(
         "--dry-run", action="store_true", help="Print actions without making API calls"
     )
+    parser.add_argument(
+        "--seed-cms-reference-ids",
+        action="store_true",
+        help="After the Keycloak steps, seed the tenant's basic reference_ids rows in tazama_cms",
+    )
+    parser.add_argument(
+        "--cms-seed-only",
+        action="store_true",
+        help="Only seed the tenant's reference_ids rows in tazama_cms; skip all Keycloak steps",
+    )
+    parser.add_argument(
+        "--psql-command",
+        default="psql",
+        help="Command that runs psql against the tazama_cms database, reading SQL from stdin "
+        '(default: psql). e.g. "docker exec -i extensions-postgres psql -U postgres -d tazama_cms"',
+    )
     args = parser.parse_args()
+
+    seed_cms = args.seed_cms_reference_ids or args.cms_seed_only
+    if not args.cms_seed_only:
+        missing = [
+            flag
+            for flag, value in (("--domain", args.domain), ("--password", args.password))
+            if not value
+        ]
+        if missing:
+            parser.error(f"the following arguments are required: {', '.join(missing)}")
+    if seed_cms and not TENANT_ID_PATTERN.match(args.tenant_id):
+        parser.error(
+            f"--tenant-id '{args.tenant_id}' contains characters not allowed for the CMS seed "
+            "(allowed: letters, digits, '_', '.', '-')"
+        )
+
+    if args.cms_seed_only:
+        print(f"\n=== Seed CMS reference_ids: {args.tenant_id} ===")
+        if args.dry_run:
+            print("*** DRY-RUN MODE - no changes will be made ***\n")
+        if not seed_cms_reference_ids(args.psql_command, args.tenant_id, args.dry_run):
+            sys.exit(1)
+        print("      Done.")
+        return
 
     domain = args.domain.lower()
     group_domain = domain.upper()  # e.g. NEWTENANT.COM - used in group paths
@@ -514,6 +611,12 @@ def main():
             args.password,
         )
 
+    if seed_cms:
+        print(f"\n[CMS] Seeding reference_ids for tenant {args.tenant_id}...")
+        if not seed_cms_reference_ids(args.psql_command, args.tenant_id, dry_run):
+            sys.exit(1)
+        print("      Done.")
+
 
 def print_tenant_report(
     base_url, realm, admin_user, admin_password, tenant_id, domain, password
@@ -545,6 +648,9 @@ def print_tenant_report(
     print("https://trs.beta.tazama.org")
     for prefix in ["trs-approver", "trs-editor", "trs-publisher"]:
         print(f"  {prefix}@{domain}")
+    print()
+    print("https://jupyter.beta.tazama.org")
+    print(f"  jupyter-user@{domain}")
     print()
     print("https://tms.beta.tazama.org")
     print("https://admin.beta.tazama.org")
