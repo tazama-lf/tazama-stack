@@ -290,7 +290,8 @@ function seedCmsReferenceIds(psqlCommand, tenantId, dryRun) {
     `  FROM "reference_ids" WHERE "tenant_id" = '${tenantId}' ORDER BY "txTp";\n`;
   const [cmd, ...cmdArgs] = splitCommand(psqlCommand);
 
-  console.log(`  ${dryRun ? '[DRY-RUN] ' : ''}Run: ${[cmd, ...cmdArgs].join(' ')}`);
+  // Print the program name only - arguments may carry credentials (connection URI)
+  console.log(`  ${dryRun ? '[DRY-RUN] ' : ''}Run: ${cmd} (arguments not shown)`);
   console.log('  SQL:');
   for (const line of sql.trimEnd().split('\n')) console.log(`    ${line}`);
   if (dryRun) return true;

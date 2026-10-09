@@ -387,7 +387,8 @@ def seed_cms_reference_ids(psql_command, tenant_id, dry_run=False):
     )
     cmd = shlex.split(psql_command)
 
-    print(f"  {'[DRY-RUN] ' if dry_run else ''}Run: {' '.join(cmd)}")
+    # Print the program name only - arguments may carry credentials (connection URI)
+    print(f"  {'[DRY-RUN] ' if dry_run else ''}Run: {cmd[0]} (arguments not shown)")
     print("  SQL:")
     for line in sql.splitlines():
         print(f"    {line}")
@@ -467,7 +468,7 @@ def main():
         ]
         if missing:
             parser.error(f"the following arguments are required: {', '.join(missing)}")
-    if seed_cms and not TENANT_ID_PATTERN.match(args.tenant_id):
+    if seed_cms and not TENANT_ID_PATTERN.fullmatch(args.tenant_id):
         parser.error(
             f"--tenant-id '{args.tenant_id}' contains characters not allowed for the CMS seed "
             "(allowed: letters, digits, '_', '.', '-')"
