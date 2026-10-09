@@ -5,10 +5,13 @@
 //   node add-tenant.js --domain <domain> --tenant-id <TENANT_ID> --password <password>
 //                      [--keycloak-url <url>] [--admin-user <user>] [--admin-password <pw>]
 //                      [--realm <realm>] [--dry-run]
+//                      [--seed-cms-reference-ids] [--psql-command <cmd>]
+//   node add-tenant.js --tenant-id <TENANT_ID> --cms-seed-only [--psql-command <cmd>] [--dry-run]
 //
 // Admin password defaults to KC_ADMIN_PW env var.
 
 import https from 'node:https';
+import { spawnSync } from 'node:child_process';
 import { URLSearchParams } from 'node:url';
 
 // ---------------------------------------------------------------------------
@@ -27,7 +30,19 @@ const USER_TEMPLATES = [
   { prefix: 'trs-editor',             first: 'TRS',    last: 'Editor',            groups: ['/tazama-trs/editor/{gd}'] },
   { prefix: 'trs-publisher',          first: 'TRS',    last: 'Publisher',         groups: ['/tazama-trs/publisher/{gd}'] },
   { prefix: 'tazama-api-client',      first: 'Tazama', last: 'API Client',        groups: ['/tazama-conditions/{gd}', '/tazama-config/{gd}', '/tazama-reports/{gd}', '/tazama-tms/{gd}'] },
+  { prefix: 'jupyter-user',           first: 'Jupyter', last: 'User',             groups: ['/tazama-jupyter/JUPYTER_USER/{gd}'] },
 ];
+
+// ---------------------------------------------------------------------------
+// CMS reference_ids seed (tazama_cms database, extensions deployment)
+// ---------------------------------------------------------------------------
+const CMS_REFERENCE_IDS = [
+  { txTp: 'pacs.008.001.10', referenceIdName: 'EndToEndId' },
+  { txTp: 'pacs.002.001.12', referenceIdName: 'OrgnlEndToEndId' },
+];
+
+// Tenant IDs are interpolated into SQL; restrict to a safe character set
+const TENANT_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
 
 // ---------------------------------------------------------------------------
 // HTTP helper (stdlib only)
@@ -224,6 +239,9 @@ async function printTenantReport(baseUrl, realm, adminUser, adminPassword, tenan
   for (const p of ['trs-approver', 'trs-editor', 'trs-publisher'])
     console.log(`  ${p}@${domain}`);
   console.log();
+  console.log('https://jupyter.beta.tazama.org');
+  console.log(`  jupyter-user@${domain}`);
+  console.log();
   console.log('https://tms.beta.tazama.org');
   console.log('https://admin.beta.tazama.org');
   console.log();
@@ -250,6 +268,47 @@ async function printTenantReport(baseUrl, realm, adminUser, adminPassword, tenan
 }
 
 // ---------------------------------------------------------------------------
+// CMS seed
+// ---------------------------------------------------------------------------
+function splitCommand(command) {
+  // Minimal shell-like split: whitespace-separated, single or double quotes group
+  return [...command.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
+}
+
+function seedCmsReferenceIds(psqlCommand, tenantId, dryRun) {
+  // Insert the basic reference_ids rows for a tenant via psql (stdin).
+  // Existing rows for the tenant are left untouched.
+  const values = CMS_REFERENCE_IDS
+    .map(({ txTp, referenceIdName }) => `  ('${txTp}', '${referenceIdName}', '${tenantId}')`)
+    .join(',\n');
+  const sql =
+    '\\set ON_ERROR_STOP on\n' +
+    'INSERT INTO "reference_ids" ("txTp", "referenceIdName", "tenant_id") VALUES\n' +
+    `${values}\n` +
+    'ON CONFLICT ("txTp", "tenant_id") DO NOTHING;\n' +
+    'SELECT "id", "txTp", "referenceIdName", "createdAt", "tenant_id"\n' +
+    `  FROM "reference_ids" WHERE "tenant_id" = '${tenantId}' ORDER BY "txTp";\n`;
+  const [cmd, ...cmdArgs] = splitCommand(psqlCommand);
+
+  // Print the program name only - arguments may carry credentials (connection URI)
+  console.log(`  ${dryRun ? '[DRY-RUN] ' : ''}Run: ${cmd} (arguments not shown)`);
+  console.log('  SQL:');
+  for (const line of sql.trimEnd().split('\n')) console.log(`    ${line}`);
+  if (dryRun) return true;
+
+  const result = spawnSync(cmd, cmdArgs, { input: sql, stdio: ['pipe', 'inherit', 'inherit'] });
+  if (result.error) {
+    console.error(`  ERROR: Could not run '${cmd}': ${result.error.message}`);
+    return false;
+  }
+  if (result.status !== 0) {
+    console.error(`  ERROR: psql command exited with code ${result.status}`);
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // CLI arg parsing (stdlib - no commander dependency)
 // ---------------------------------------------------------------------------
 function parseArgs() {
@@ -267,6 +326,9 @@ function parseArgs() {
     adminPassword: get('--admin-password', process.env.KC_ADMIN_PW ?? 'password'),
     realm:         get('--realm', 'tazama'),
     dryRun:        args.includes('--dry-run'),
+    seedCms:       args.includes('--seed-cms-reference-ids'),
+    cmsSeedOnly:   args.includes('--cms-seed-only'),
+    psqlCommand:   get('--psql-command', 'psql'),
   };
 }
 
@@ -275,9 +337,24 @@ function parseArgs() {
 // ---------------------------------------------------------------------------
 async function main() {
   const opts = parseArgs();
-  if (!opts.domain || !opts.tenantId || !opts.password) {
+  if (!opts.tenantId || (!opts.cmsSeedOnly && (!opts.domain || !opts.password))) {
     console.error('Usage: node add-tenant.js --domain <domain> --tenant-id <TENANT_ID> --password <password>');
+    console.error('       node add-tenant.js --tenant-id <TENANT_ID> --cms-seed-only [--psql-command <cmd>]');
     process.exit(1);
+  }
+
+  const seedCms = opts.seedCms || opts.cmsSeedOnly;
+  if (seedCms && !TENANT_ID_PATTERN.test(opts.tenantId)) {
+    console.error(`ERROR: --tenant-id '${opts.tenantId}' contains characters not allowed for the CMS seed (allowed: letters, digits, '_', '.', '-')`);
+    process.exit(1);
+  }
+
+  if (opts.cmsSeedOnly) {
+    console.log(`\n=== Seed CMS reference_ids: ${opts.tenantId} ===`);
+    if (opts.dryRun) console.log('*** DRY-RUN MODE - no changes will be made ***');
+    if (!seedCmsReferenceIds(opts.psqlCommand, opts.tenantId, opts.dryRun)) process.exit(1);
+    console.log('      Done.');
+    return;
   }
 
   const domain      = opts.domain.toLowerCase();
@@ -298,6 +375,8 @@ async function main() {
   const groupIdCache = {};
 
   for (const path of neededPaths.sort()) {
+    // Refresh token per path - the master admin token can expire (60s default)
+    if (!dryRun) token = await getToken(baseUrl, opts.adminUser, opts.adminPassword);
     const parts = path.replace(/^\//, '').split('/');
     let currentPath = '';
     let parentId = null;
@@ -341,6 +420,12 @@ async function main() {
 
   if (!dryRun) {
     await printTenantReport(baseUrl, realm, opts.adminUser, opts.adminPassword, opts.tenantId, domain, opts.password);
+  }
+
+  if (seedCms) {
+    console.log(`\n[CMS] Seeding reference_ids for tenant ${opts.tenantId}...`);
+    if (!seedCmsReferenceIds(opts.psqlCommand, opts.tenantId, dryRun)) process.exit(1);
+    console.log('      Done.');
   }
 }
 
