@@ -32,6 +32,13 @@ ADMIN_ENDPOINT=https://admin.beta.tazama.org
 ALLOWED_ORIGINS=https://trs.beta.tazama.org
 CORS_ORIGINS=https://tcs.beta.tazama.org,https://cms.beta.tazama.org
 
+# CMS session cookies + CORS (HTTPS production).
+# env/case-management-system.env ships plain-HTTP dev defaults (false/lax/localhost);
+# these overlay lines override them so cookies are secure and CORS accepts the public origin.
+SESSION_COOKIE_SECURE=true
+SESSION_COOKIE_SAMESITE=strict
+CORS_ALLOWED_ORIGINS=https://cms.beta.tazama.org
+
 # Datalakehouse API — Server C private IP + published port
 # extensions/env/case-management-system.env ships a dev default (10.10.80.20:8001); this overlay
 # replaces it with the correct Server C address for every AWS deployment.
