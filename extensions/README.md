@@ -284,6 +284,15 @@ The CMS backend depends on `case-management-system-migrate`, `flowable`, and `op
 docker restart case-management-system-backend
 ```
 
+If the backend exits immediately with a config-validation error naming `SESSION_COOKIE_SECURE`, `SESSION_COOKIE_SAMESITE`, or `CORS_ALLOWED_ORIGINS`, these three variables are required and must be set in `extensions/env/case-management-system.env`:
+
+| Deployment | `SESSION_COOKIE_SECURE` | `SESSION_COOKIE_SAMESITE` | `CORS_ALLOWED_ORIGINS` |
+| --- | --- | --- | --- |
+| Local / plain HTTP | `false` | `lax` | `http://localhost:5175` (the frontend origin) |
+| Production / HTTPS | `true` | `strict` | the public HTTPS frontend origin(s), comma-separated |
+
+> On plain HTTP, `SESSION_COOKIE_SECURE=true` can silently break login: most browsers discard the session cookie so every request 401s (behaviour varies by browser and host — e.g. Chromium still permits `Secure` cookies on `localhost`). `CORS_ALLOWED_ORIGINS` must be the frontend origin, not the backend URL.
+
 ### DEMS/DEAPI pre-flight fails with "tazama-core is not running"
 
 Ensure you have started the core stack on this machine first using `tazama-core.bat` (or `.sh`) from the `core/` folder. The pre-flight launcher checks for a running `tazama-core` Compose project before deploying.
