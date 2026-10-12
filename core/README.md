@@ -655,7 +655,7 @@ in your `tazama-stack` repository folder, or you must update the volume string i
 (This change assumes you exported the new realm to the root of the `tazama-stack` repository folder.)
 
 > [!IMPORTANT]
-> An export contains resolved values where the committed realm file has `${...}` placeholders (the `jupyterhub` client secret and URLs). Restore the placeholders before you commit an export. See [Maintaining the realm file](#maintaining-the-realm-file).
+> An export contains resolved values where the committed realm file has `${...}` placeholders (the `jupyterhub` and `nifi` client secrets and URLs). Restore the placeholders before you commit an export. See [Maintaining the realm file](#maintaining-the-realm-file).
 
 <div style="text-align: right"><a href="#top">Top</a></div>
 
@@ -880,6 +880,7 @@ Every human user in the realm has the password **`password`**:
 | `tcs-approver@tazama.org`, `tcs-editor@tazama.org`, `tcs-exporter@tazama.org`, `tcs-publisher@tazama.org` | The matching `/tazama-tcs/<role>` group |
 | `trs-approver@tazama.org`, `trs-editor@tazama.org`, `trs-publisher@tazama.org` | The matching `/tazama-trs/<role>` group |
 | `jupyter-user@tazama.org` | `/tazama-jupyter/JUPYTER_USER/TAZAMA.ORG` |
+| `nifi-admin@tazama.org` | `/tazama-nifi/NIFI_ADMIN/TAZAMA.ORG` |
 
 `service-account-auth-lib-client` is the service account of the `auth-lib-client` client and has no password.
 
@@ -898,25 +899,45 @@ The realm contains everything the BIAR JupyterHub needs to log users in through 
 | Protocol mapper `realm-roles-userinfo` on that client | Puts the realm roles in a flat `roles` claim in the userinfo response. Keycloak does not do this by default, and without it JupyterHub rejects every login. |
 | User `jupyter-user@tazama.org` | Test user with `JUPYTER_USER` access. |
 
+### NiFi objects
+
+The realm also contains what the BIAR NiFi needs when it runs with `NIFI_AUTH=keycloak` (see [NiFi authentication modes](../biar/README.md#95-nifi-authentication-modes) in the BIAR README for the NiFi side). In the default `none` mode NiFi does not use them.
+
+| Object | Purpose |
+|---|---|
+| Realm role `NIFI_ADMIN` | NiFi gives holders full administrator rights. NiFi has no tenant isolation, so there is no lesser role. |
+| Group `tazama-nifi` with role group `NIFI_ADMIN` | The role group carries the `NIFI_ADMIN` realm role, so members of any subgroup inherit it. |
+| Org subgroup `TAZAMA.ORG` under `NIFI_ADMIN` | Attribute `TENANT_ID=TAZAMA`. Users are placed here, never directly in the role group. |
+| Client `nifi` | Confidential client, standard (authorization code) flow only. |
+| Protocol mapper `realm-roles-userinfo` on that client | Puts the realm roles in a flat `roles` claim, which NiFi reads as the user's groups. |
+| User `nifi-admin@tazama.org` | Test user with `NIFI_ADMIN` access. |
+
 ### Deployment-specific values
 
-Two settings of the `jupyterhub` client differ per deployment. The realm file holds placeholders for them, which Keycloak resolves from its own container environment during the import:
+Two settings each of the `jupyterhub` and `nifi` clients differ per deployment. The realm file holds placeholders for them, which Keycloak resolves from its own container environment during the import:
 
 | Realm file placeholder | Keycloak container variable | Local default | Used for |
 |---|---|---|---|
 | `${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}` | `JUPYTERHUB_PUBLIC_URL` | `http://localhost:8000` | Redirect URI (`<url>/hub/oauth_callback`), web origin and post-logout redirect |
 | `${JUPYTERHUB_OIDC_CLIENT_SECRET:jupyterhub-test-secret}` | `JUPYTERHUB_OIDC_CLIENT_SECRET` | `jupyterhub-test-secret` | Client secret |
+| `${NIFI_PUBLIC_URL:https://localhost:8443}` | `NIFI_PUBLIC_URL` | `https://localhost:8443` | NiFi redirect URI (`<url>/nifi-api/access/oidc/callback`) and post-logout redirect |
+| `${TAZAMA_NIFI_OIDC_CLIENT_SECRET:nifi-test-secret}` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `nifi-test-secret` | NiFi client secret |
 
-The `keycloak` service in [`docker-compose.base.auth.yaml`](./docker-compose.base.auth.yaml) passes both variables through from `core/.env` (or the shell), falling back to the local defaults. To change them, set them in `core/.env` before the realm is first imported:
+The `keycloak` service in [`docker-compose.base.auth.yaml`](./docker-compose.base.auth.yaml) passes these variables through from `core/.env` (or the shell), falling back to the local defaults. To change them, set them in `core/.env` before the realm is first imported:
 
 ```
 JUPYTERHUB_PUBLIC_URL=https://jupyter.example.org
 JUPYTERHUB_OIDC_CLIENT_SECRET=<a long random value>
+NIFI_PUBLIC_URL=https://nifi.example.org:443
+TAZAMA_NIFI_OIDC_CLIENT_SECRET=<a long random value>
 ```
 
-The hub must use the same values: `JUPYTERHUB_PUBLIC_URL` and `KEYCLOAK_CLIENT_SECRET` in `biar/env/biar-jupyterhub.env`. The local defaults on both sides already match.
+The hub must use the same values: `JUPYTERHUB_PUBLIC_URL` and `KEYCLOAK_CLIENT_SECRET` in `biar/env/biar-jupyterhub.env`. NiFi must use the same client secret: `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `biar/.env`. The local defaults on both sides already match.
 
-On the AWS deployment, `deploy-core.ps1` writes these values to `core/.env` on Server A automatically (see `Set-JupyterHubOidcOverlay` in the [AWS deployment instructions](../infra/aws/aws-deployment-instructions.md)).
+> [!NOTE]
+> Behind a TLS-terminating proxy that sends `X-Forwarded-Port: 443` (such as an AWS ALB), NiFi builds its redirect URI with an explicit `:443`, and Keycloak does not treat `https://host` and `https://host:443` as the same. Include `:443` in `NIFI_PUBLIC_URL` in that case, as in the example above.
+
+On the AWS deployment, `deploy-core.ps1` writes the JupyterHub values to `core/.env` on Server A automatically (see `Set-JupyterHubOidcOverlay` in the [AWS deployment instructions](../infra/aws/aws-deployment-instructions.md)).
 
 ### When changes take effect
 
@@ -932,7 +953,7 @@ To change a running realm without losing data, use the Keycloak Administration C
 
 ### Maintaining the realm file
 
-- **Keep the placeholders.** An export of a running realm (see [Exporting the Keycloak Tazama realm](#exporting-the-keycloak-tazama-realm)) contains the resolved values, including the live client secret, instead of the `${...}` placeholders. Before you commit an export as `00-tazama-test-realm.json`, put the two placeholders back on the `jupyterhub` client (`secret`, `redirectUris`, `webOrigins` and the `post.logout.redirect.uris` attribute), and check that no real secret or password is left in the file.
+- **Keep the placeholders.** An export of a running realm (see [Exporting the Keycloak Tazama realm](#exporting-the-keycloak-tazama-realm)) contains the resolved values, including the live client secret, instead of the `${...}` placeholders. Before you commit an export as `00-tazama-test-realm.json`, put the placeholders back on the `jupyterhub` and `nifi` clients (`secret`, `redirectUris`, `webOrigins` and the `post.logout.redirect.uris` attribute), and check that no real secret or password is left in the file.
 - **Placeholder syntax.** Keycloak replaces `${NAME:default}` with the value of the environment variable `NAME`, or with `default` if it is not set. Values such as `${role_offline-access}` are Keycloak message keys and must be left unchanged.
 - **Passwords in the file.** Users are defined with a plain-text `credentials` entry (`"type": "password"`, `"temporary": false`). Keycloak hashes the value on import.
 - **Granting JupyterHub access to a tenant.** The [tenant scripts](#adding-tenants-and-users-to-keycloak) do not create JupyterHub groups. Add an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) under `/tazama-jupyter/JUPYTER_USER` and/or `/tazama-jupyter/JUPYTER_ADMIN`, and put the users in it. No JupyterHub configuration change is needed.

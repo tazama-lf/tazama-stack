@@ -468,6 +468,14 @@
       "clientRole" : false,
       "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
       "attributes" : { }
+    }, {
+      "id" : "bf857d8f-6285-492b-90d9-24c77f59eebe",
+      "name" : "NIFI_ADMIN",
+      "description" : "",
+      "composite" : false,
+      "clientRole" : false,
+      "containerId" : "2c88a1ac-0bfb-4d46-9ad9-c8e18c7d8111",
+      "attributes" : { }
     } ],
     "client" : {
       "auth-lib-client" : [ {
@@ -904,6 +912,34 @@
     "realmRoles" : [ ],
     "clientRoles" : { }
   }, {
+    "id" : "787e5903-8264-4efe-8d82-dd9abbe20d3c",
+    "name" : "tazama-nifi",
+    "path" : "/tazama-nifi",
+    "subGroups" : [ {
+      "id" : "ba3d428a-d4ff-40b2-8c4d-0d04c0c8d8a5",
+      "name" : "NIFI_ADMIN",
+      "path" : "/tazama-nifi/NIFI_ADMIN",
+      "parentId" : "787e5903-8264-4efe-8d82-dd9abbe20d3c",
+      "subGroups" : [ {
+        "id" : "16057e0e-bc72-41cc-b675-a823adec25b5",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-nifi/NIFI_ADMIN/TAZAMA.ORG",
+        "parentId" : "ba3d428a-d4ff-40b2-8c4d-0d04c0c8d8a5",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "TAZAMA" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
+      "attributes" : { },
+      "realmRoles" : [ "NIFI_ADMIN" ],
+      "clientRoles" : { }
+    } ],
+    "attributes" : { },
+    "realmRoles" : [ ],
+    "clientRoles" : { }
+  }, {
     "id" : "70d906a9-8f04-4cfb-9e4f-1235e4fa9131",
     "name" : "tazama-reports",
     "path" : "/tazama-reports",
@@ -1204,6 +1240,25 @@
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
     "groups" : [ "/tazama-jupyter/JUPYTER_USER/TAZAMA.ORG" ]
+  }, {
+    "id" : "844c3259-1cfe-40ce-8c6c-d24258a475d8",
+    "username" : "nifi-admin@tazama.org",
+    "enabled" : true,
+    "totp" : false,
+    "emailVerified" : true,
+    "firstName" : "nifi",
+    "lastName" : "admin",
+    "email" : "nifi-admin@tazama.org",
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-tazama" ],
+    "notBefore" : 0,
+    "groups" : [ "/tazama-nifi/NIFI_ADMIN/TAZAMA.ORG" ]
   }, {
     "id" : "1c62ea61-ac86-4a8d-8720-0bf503124ede",
     "createdTimestamp" : 1721648133968,
@@ -1714,6 +1769,59 @@
     "nodeReRegistrationTimeout" : -1,
     "protocolMappers" : [ {
       "id" : "da195b83-da82-43da-8666-f64a1c2ae650",
+      "name" : "realm-roles-userinfo",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usermodel-realm-role-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "introspection.token.claim" : "true",
+        "multivalued" : "true",
+        "userinfo.token.claim" : "true",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "roles",
+        "jsonType.label" : "String"
+      }
+    } ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+  }, {
+    "id" : "cf0f7ba8-86b4-4aab-b984-0893413009ee",
+    "clientId" : "nifi",
+    "name" : "NiFi",
+    "description" : "",
+    "rootUrl" : "",
+    "adminUrl" : "",
+    "baseUrl" : "",
+    "surrogateAuthRequired" : false,
+    "enabled" : true,
+    "alwaysDisplayInConsole" : false,
+    "clientAuthenticatorType" : "client-secret",
+    "secret" : "${TAZAMA_NIFI_OIDC_CLIENT_SECRET:nifi-test-secret}",
+    "redirectUris" : [ "${NIFI_PUBLIC_URL:https://localhost:8443}/nifi-api/access/oidc/callback" ],
+    "webOrigins" : [ ],
+    "notBefore" : 0,
+    "bearerOnly" : false,
+    "consentRequired" : false,
+    "standardFlowEnabled" : true,
+    "implicitFlowEnabled" : false,
+    "directAccessGrantsEnabled" : false,
+    "serviceAccountsEnabled" : false,
+    "publicClient" : false,
+    "frontchannelLogout" : true,
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "oidc.ciba.grant.enabled" : "false",
+      "backchannel.logout.session.required" : "true",
+      "post.logout.redirect.uris" : "${NIFI_PUBLIC_URL:https://localhost:8443}/*",
+      "oauth2.device.authorization.grant.enabled" : "false",
+      "backchannel.logout.revoke.offline.tokens" : "false"
+    },
+    "authenticationFlowBindingOverrides" : { },
+    "fullScopeAllowed" : true,
+    "nodeReRegistrationTimeout" : -1,
+    "protocolMappers" : [ {
+      "id" : "9182c6d4-ee3c-4b36-8a15-e13141915059",
       "name" : "realm-roles-userinfo",
       "protocol" : "openid-connect",
       "protocolMapper" : "oidc-usermodel-realm-role-mapper",

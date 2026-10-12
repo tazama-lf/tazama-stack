@@ -19,6 +19,9 @@ services:
       # Resolved by the realm import placeholders on the jupyterhub client
       - JUPYTERHUB_PUBLIC_URL=${JUPYTERHUB_PUBLIC_URL:-http://localhost:8000}
       - JUPYTERHUB_OIDC_CLIENT_SECRET=${JUPYTERHUB_OIDC_CLIENT_SECRET:-jupyterhub-test-secret}
+      # Resolved by the realm import placeholders on the nifi client
+      - NIFI_PUBLIC_URL=${NIFI_PUBLIC_URL:-https://localhost:8443}
+      - TAZAMA_NIFI_OIDC_CLIENT_SECRET=${TAZAMA_NIFI_OIDC_CLIENT_SECRET:-nifi-test-secret}
       - QUARKUS_HTTP_ACCESS_LOG_ENABLED=true
       - KC_LOG_LEVEL=INFO
     volumes:

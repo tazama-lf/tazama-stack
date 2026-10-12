@@ -28,12 +28,18 @@ services:
     image: curlimages/curl:latest
     container_name: biar-nifi-init
     restart: on-failure
+    # uid of the nifi user, which owns the machine identity key (mode 0600)
+    user: "1000:1000"
     env_file:
       - .env
       - env/biar-nifi.env
+    environment:
+      NIFI_AUTH: ${NIFI_AUTH:-none}
+      NIFI_HTTPS_INTERNAL_PORT: "8443"
     depends_on:
       - biar-nifi
     volumes:
       - ./nifi:/nifi:ro
+      - nifi_machine_identity:/opt/nifi/machine-identity:ro
     entrypoint: ["/bin/sh", "/nifi/init.sh"]
   

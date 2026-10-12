@@ -29,6 +29,7 @@
   - [9.2. Apache Ozone bucket initialisation](#92-apache-ozone-bucket-initialisation)
   - [9.3. Docker Compose YAML structure](#93-docker-compose-yaml-structure)
   - [9.4. JupyterHub Keycloak login: defaults, changes and maintenance](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance)
+  - [9.5. NiFi authentication modes](#95-nifi-authentication-modes)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -196,7 +197,7 @@ Tazama BIAR application services. The `hub` variant pulls pre-built images from 
 
 | Service | Container | Port | Description |
 |---|---|---|---|
-| Apache NiFi | `biar-nifi` | 8088 | Visual data flow engine. Connects to PostgreSQL on Server A (`:15432`) and Server B (`:15433`) to ingest transaction and case data. |
+| Apache NiFi | `biar-nifi` | 8088 (`none` mode) / 8443 (`keycloak` mode) | Visual data flow engine. Connects to PostgreSQL on Server A (`:15432`) and Server B (`:15433`) to ingest transaction and case data. Runs without login by default; see [9.5](#95-nifi-authentication-modes). |
 | Automation Orchestrator | `biar-automation-orchestrator` | 7619 | PySpark-based batch processor and Hudi data lake manager. Writes to the shared warehouse at `TAZAMA_WAREHOUSE_HOST_PATH`. |
 | Datalakehouse API | `biar-datalakehouse-api` | 8282 | FastAPI REST interface for querying the Hudi data lakehouse. Reads from `TAZAMA_WAREHOUSE_HOST_PATH`. |
 | Unstructured Pipeline | `biar-unstructured-pipeline` | — | Document ingestion pipeline that submits files to Tika for parsing and indexes results in Solr (no external port). |
@@ -212,7 +213,7 @@ One-shot containers that run at stack startup and remain running for ad-hoc oper
 | Service | Container | Description |
 |---|---|---|
 | AWS CLI | `ozone-aws-cli` | Polls S3G until healthy, then creates the `tazama` Ozone bucket. Remains running for ad-hoc S3 operations against Ozone. |
-| NiFi Init | `biar-nifi-init` | Polls the NiFi API and injects the pre-configured parameter context and flow template when NiFi is ready (up to 5 min). Restarts on failure. |
+| NiFi Init | `biar-nifi-init` | Polls the NiFi API and injects the pre-configured parameter context and flow template when NiFi is ready (up to 5 min). Restarts on failure. In `keycloak` mode it authenticates with NiFi's machine identity certificate (see [9.5](#95-nifi-authentication-modes)). |
 
 <div style="text-align: right"><a href="#top">Top</a></div>
 
@@ -221,11 +222,9 @@ One-shot containers that run at stack startup and remain running for ad-hoc oper
 After a successful deployment, the following interfaces are accessible from `localhost` (or the Server C address in a multi-server deployment):
 
 #### Apache NiFi
-- NiFi UI: <http://localhost:8088/nifi>
-- Default credentials: username `admin`, password `admin123456789`
-
-> [!NOTE]
-> **Change the NiFi admin password before exposing this service on a shared network.** The default password is committed in the repository and is publicly known. See the AWS deployment instructions for the approach used to override it at deploy time.
+- `none` mode (default): <http://localhost:8088/nifi>. There is no login, and the port is reachable from this machine only.
+- `keycloak` mode: <https://localhost:8443/nifi>. Log in with a Keycloak account that has the `NIFI_ADMIN` role. The default test user is `nifi-admin@tazama.org` / `password`.
+- See [9.5](#95-nifi-authentication-modes) for how to switch modes.
 
 #### Apache Solr
 - Solr Admin UI: <http://localhost:8983>
@@ -356,7 +355,7 @@ Each running JupyterLab server consumes Spark driver memory (`SPARK_DRIVER_MEMOR
 
 ### NiFi fails to start or takes a very long time
 
-NiFi requires significant heap memory and can take 2-3 minutes to initialise on first boot. It generates TLS certificates and writes its state store on first run. If the container exits immediately, check the logs:
+NiFi requires significant heap memory and can take 2-3 minutes to initialise on first boot. It writes its state store on first run, and in `keycloak` mode it also generates its TLS certificates. If the container exits immediately, check the logs:
 
 ```
 docker logs biar-nifi
@@ -364,7 +363,9 @@ docker logs biar-nifi
 
 If you see `OutOfMemoryError`, increase Docker Desktop's memory allocation. NiFi is configured with 512 MB initial and 1 GB maximum heap by default.
 
-If NiFi shows an error about an existing `./conf/nifi.properties` that conflicts with environment variables, the NiFi volume contains state from a previous run with different credentials. Stop and remove volumes before redeploying:
+If the log ends with `NIFI_AUTH=keycloak requires: ...`, set the listed variables in `biar/.env` (see [9.5](#95-nifi-authentication-modes)) and deploy again.
+
+To start again from a clean NiFi state, stop the stack and remove its volumes before redeploying. This deletes the NiFi flow and all other BIAR data:
 
 ```
 docker compose -p tazama-biar -f ./docker-compose.biar.infrastructure.yaml down --volumes
@@ -394,13 +395,12 @@ The launcher checks that `SERVER_A_HOST:14222` is reachable via TCP. If the chec
 
 ## 9.1. NiFi flow management
 
-The BIAR NiFi instance does not ship with a pre-configured flow. After first boot:
+The `biar-nifi-init` container imports the Tazama flow from [`nifi/tazama.xml`](./nifi/tazama.xml) and sets its parameter context when the stack starts. To work with the flow:
 
-1. Open the NiFi UI at <http://localhost:8088/nifi>
-2. Log in with username `admin` and password `admin123456789` (change this for any shared deployment)
-3. Import or build a flow that reads from the PostgreSQL databases on Server A (`SERVER_A_HOST:15432`) and Server B (`SERVER_B_HOST:15433`)
+1. Open the NiFi UI: <http://localhost:8088/nifi> in `none` mode, or <https://localhost:8443/nifi> in `keycloak` mode (see [9.5](#95-nifi-authentication-modes))
+2. Edit the imported flow, or build your own, reading from the PostgreSQL databases on Server A (`SERVER_A_HOST:15432`) and Server B (`SERVER_B_HOST:15433`)
 
-NiFi state and flow configuration are persisted in named Docker volumes (`nifi_conf`, `nifi_state`, `nifi_db`, `nifi_flowfile`, `nifi_content`, `nifi_provenance`). These volumes survive container restarts. They are removed by a teardown with `--volumes`.
+NiFi state and flow configuration are persisted in named Docker volumes (`nifi_conf`, `nifi_state`, `nifi_db`, `nifi_flowfile`, `nifi_content`, `nifi_provenance`, and `nifi_machine_identity` in `keycloak` mode). These volumes survive container restarts. They are removed by a teardown with `--volumes`.
 
 To export a configured flow for reuse, use NiFi's built-in `Download flow definition` option (right-click the process group in the canvas). Store the exported JSON in version control.
 
@@ -490,5 +490,83 @@ Keycloak reads `core/.env` only when the realm is first imported. See the core R
 
 > [!IMPORTANT]
 > Do not commit real secrets to `env/biar-jupyterhub.env`. Supply them at deploy time from a secret store. On the AWS deployment the client secret is in SSM at `/tazama/creds/jupyterhub/oidc-client-secret` and the encryption key at `/tazama/creds/jupyterhub/crypt_key`.
+
+## 9.5. NiFi authentication modes
+
+`NIFI_AUTH` in `biar/.env` chooses how NiFi is protected. The launcher header shows the current mode.
+
+| `NIFI_AUTH` | NiFi UI | Login | Use for |
+|---|---|---|---|
+| `none` (default) | <http://localhost:8088/nifi> | None. Anyone who can reach the port has full control of NiFi. | Local development on your own machine |
+| `keycloak` | <https://localhost:8443/nifi> | Keycloak (`tazama` realm). Only holders of the `NIFI_ADMIN` role get in. | Any deployment that other people can reach |
+
+> [!WARNING]
+> In `none` mode, port 8088 is published on `127.0.0.1` only, so only your own machine can reach it. Setting `NIFI_BIND_ADDRESS=0.0.0.0` opens it to your network **without any login**: anyone who can reach it can change every flow and use its database connections. Use `keycloak` mode instead.
+
+### Using keycloak mode locally
+
+1. Start the core stack with the Authentication services. The `nifi` client, role, group and test user are in the realm file (see [Keycloak realm defaults](../core/README.md#nifi-objects) in the core README). A Keycloak container whose realm was imported before they were added does not have them: remove the container to reimport the realm, as described in the core README.
+2. In `biar/.env`, set `NIFI_AUTH=keycloak` and fill in the three empty secrets. NiFi refuses to start until they are set. Generate each value with:
+
+   ```
+   openssl rand -hex 16
+   ```
+
+3. Deploy the BIAR stack with the launcher. On first start, NiFi generates its own certificate authority and server certificate.
+4. Open <https://localhost:8443/nifi>. Your browser warns that the certificate is not trusted, because NiFi issued it itself. Accept the warning for this local address.
+5. Log in as `nifi-admin@tazama.org` / `password`.
+
+An existing installation keeps its flow, including the stored passwords, when it is switched from `none` to `keycloak`.
+
+> [!IMPORTANT]
+> Keep `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` once it is set. It encrypts the passwords stored in the flow, and NiFi cannot read them without it.
+
+### Variables
+
+All variables are in `biar/.env`; those marked "compose default" are not listed there but can be added.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NIFI_AUTH` | `none` | `none` or `keycloak` |
+| `NIFI_PORT` | `8088` | Host port of the HTTP UI (`none` mode) |
+| `NIFI_BIND_ADDRESS` | `127.0.0.1` | Host address the HTTP port is published on (`none` mode) |
+| `NIFI_HTTPS_PORT` | `8443` | Host port of the HTTPS UI (`keycloak` mode) |
+| `NIFI_HTTPS_BIND_ADDRESS` | `0.0.0.0` (compose default) | Host address the HTTPS port is published on |
+| `NIFI_WEB_PROXY_HOST` | `localhost:8443` | Comma-separated `host:port` list that browsers use to reach NiFi. NiFi rejects requests for other host names. |
+| `NIFI_KEYCLOAK_ISSUER_URL` | `http://host.docker.internal:8080/realms/tazama` | Keycloak realm address, as seen from the NiFi container |
+| `NIFI_KEYCLOAK_CLIENT_ID` | `nifi` (compose default) | Keycloak client ID |
+| `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `nifi-test-secret` | Client secret. Must match `TAZAMA_NIFI_OIDC_CLIENT_SECRET` of the Keycloak container. |
+| `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` | (empty) | Encrypts the passwords stored in the flow. At least 12 characters. |
+| `TAZAMA_NIFI_KEYSTORE_PASSWORD` | (empty) | Password of NiFi's server keystore |
+| `TAZAMA_NIFI_TRUSTSTORE_PASSWORD` | (empty) | Password of NiFi's truststore |
+
+The `NIFI_KEYCLOAK_*` and `TAZAMA_NIFI_*` variables are used only in `keycloak` mode.
+
+### Who can log in
+
+NiFi gives full administrator rights to users with the realm role `NIFI_ADMIN`, and refuses everyone else. NiFi has no tenant isolation, so there is no lesser role. Users get the role through group membership in Keycloak: `/tazama-nifi/NIFI_ADMIN/<ORG>`.
+
+To give someone access, add them to an org subgroup of `/tazama-nifi/NIFI_ADMIN` in the Keycloak Administration Console (**Users > _user_ > Groups > Join group**). For another organisation, create an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) first. The change applies at the user's next NiFi login. No NiFi change or restart is needed.
+
+### Automation and the machine identity
+
+In `keycloak` mode, NiFi writes a client certificate for automation (`CN=tazama-nifi-machine`) to the `nifi_machine_identity` volume. `biar-nifi-init` mounts this volume read-only and uses the certificate for its API calls. The certificate gives full administrator rights over the NiFi API, so mount the volume only into containers you trust. Never give another container the `nifi_conf` volume: it holds NiFi's certificate authority and encryption keys.
+
+### Changing the defaults
+
+| To change | NiFi side (`biar/.env`) | Keycloak side |
+|---|---|---|
+| Public NiFi address | `NIFI_WEB_PROXY_HOST` | `NIFI_PUBLIC_URL` in `core/.env` before the realm import, or the redirect URI and post-logout redirect of **Clients > nifi** in the running realm |
+| Client secret | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `core/.env` before the realm import, or **Clients > nifi > Credentials** in the running realm |
+| Keycloak address | `NIFI_KEYCLOAK_ISSUER_URL` | - |
+
+After changing the NiFi side, recreate the container to load the new values:
+
+```
+docker compose -p tazama-biar -f docker-compose.biar.infrastructure.yaml -f docker-compose.hub.biar.yaml -f docker-compose.utils.init.yaml up -d --force-recreate biar-nifi biar-nifi-init
+```
+
+> [!IMPORTANT]
+> Do not commit real secrets to `biar/.env`. Supply them at deploy time from a secret store.
 
 <div style="text-align: right"><a href="#top">Top</a></div>
