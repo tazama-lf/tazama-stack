@@ -112,8 +112,9 @@ for i in $(seq 1 10); do
     | sed 's/.*"parameterContexts":\[\(.*\)\].*/\1/' \
     | sed 's/},{/}\n{/g' \
     | grep "\"name\":\"$PB_CONTEXT_NAME\"" \
-    | sed 's/.*"id":"\([^"]*\)".*/\1/' \
-    | head -n 1)
+    | grep -o '"id":"[^"]*"' \
+    | head -n 1 \
+    | cut -d'"' -f4)
 
   if [ -n "$PARAM_CONTEXT_ID" ]; then
     break
@@ -258,7 +259,17 @@ echo "Parameter Context applied successfully"
 
 IMPORT_NIFI_TEMPLATE="${IMPORT_NIFI_TEMPLATE:-true}"
 
-if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
+# Instantiating a template always creates new components, so a rerun must not
+# import it again once the flow is on the canvas.
+flow_present() {
+  nifi_curl -s "$BASE_URL/flow/process-groups/$TEMPLATE_TARGET_PG_ID" \
+    | tr -d '\n' \
+    | grep -q '"processors":\[{'
+}
+
+if [ "$IMPORT_NIFI_TEMPLATE" = "true" ] && flow_present; then
+  echo "Flow already present in process group $TEMPLATE_TARGET_PG_ID; skipping template import"
+elif [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
   TEMPLATE_FILE="${NIFI_TEMPLATE_FILE:-/nifi/tazama.xml}"
   TEMPLATE_X="${NIFI_TEMPLATE_X:-0.0}"
   TEMPLATE_Y="${NIFI_TEMPLATE_Y:-0.0}"
