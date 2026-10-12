@@ -383,7 +383,7 @@ def seed_cms_reference_ids(psql_command, tenant_id, dry_run=False):
         f"{values}\n"
         'ON CONFLICT ("txTp", "tenant_id") DO NOTHING;\n'
         'SELECT "id", "txTp", "referenceIdName", "createdAt", "tenant_id"\n'
-        f"  FROM \"reference_ids\" WHERE \"tenant_id\" = '{tenant_id}' ORDER BY \"txTp\";\n"
+        f'  FROM "reference_ids" WHERE "tenant_id" = \'{tenant_id}\' ORDER BY "txTp";\n'
     )
     cmd = shlex.split(psql_command)
 
@@ -463,7 +463,10 @@ def main():
     if not args.cms_seed_only:
         missing = [
             flag
-            for flag, value in (("--domain", args.domain), ("--password", args.password))
+            for flag, value in (
+                ("--domain", args.domain),
+                ("--password", args.password),
+            )
             if not value
         ]
         if missing:

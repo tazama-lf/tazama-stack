@@ -13,3 +13,6 @@ infra/aws/.terraform.lock.hcl
 
 # Local backups (JupyterHub notebooks etc.) - binary archives, never commit
 backups/
+
+# Python bytecode caches (e.g. from running utils/*.py)
+__pycache__/
