@@ -331,6 +331,15 @@ if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
         | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
         | head -n 1)
     fi
+
+    # The upload endpoint answers in XML (<templateEntity><template><id>...</id>).
+    # Take the first <id> element.
+    if [ -z "$TEMPLATE_ID" ]; then
+      TEMPLATE_ID=$(echo "$UPLOAD_BODY" \
+        | tr -d '\n' \
+        | sed -n 's:</id>.*::; s:.*<id>\([^<]*\)$:\1:p' \
+        | head -n 1)
+    fi
   fi
 
   if [ -z "$TEMPLATE_ID" ]; then
