@@ -166,6 +166,7 @@ services:
 
 volumes:
   solr_data:
+  nifi_machine_identity:
   nifi_conf:
   nifi_state:
   nifi_db:

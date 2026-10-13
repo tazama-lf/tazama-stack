@@ -2,7 +2,37 @@
 
 set -e
 
-BASE_URL="http://biar-nifi:8088/nifi-api"
+# none:     plain HTTP, no authentication.
+# keycloak: HTTPS, authenticated with the machine identity certificate that the
+#           biar-nifi image writes to the shared nifi_machine_identity volume.
+NIFI_AUTH_MODE=$(printf '%s' "${NIFI_AUTH:-none}" | tr '[:upper:]' '[:lower:]')
+MACHINE_IDENTITY_DIR="/opt/nifi/machine-identity"
+
+case "$NIFI_AUTH_MODE" in
+  none)
+    BASE_URL="http://biar-nifi:8088/nifi-api"
+    ;;
+  keycloak)
+    BASE_URL="https://biar-nifi:${NIFI_HTTPS_INTERNAL_PORT:-8443}/nifi-api"
+    ;;
+  *)
+    echo "Unsupported NIFI_AUTH value: ${NIFI_AUTH} (expected none or keycloak)"
+    exit 1
+    ;;
+esac
+
+nifi_curl() {
+  if [ "$NIFI_AUTH_MODE" = "keycloak" ]; then
+    curl --cacert "$MACHINE_IDENTITY_DIR/ca.crt" \
+      --cert "$MACHINE_IDENTITY_DIR/machine.crt" \
+      --key "$MACHINE_IDENTITY_DIR/machine.key" \
+      "$@"
+  else
+    curl "$@"
+  fi
+}
+
+echo "NiFi auth mode: $NIFI_AUTH_MODE ($BASE_URL)"
 PB_SENSITIVE_FALSE="${PB_SENSITIVE_FALSE:-${PB_SENSITIVE:-false}}"
 
 echo "Waiting for NiFi API to be ready..."
@@ -13,7 +43,7 @@ WAIT_DELAY_SECONDS="${NIFI_API_WAIT_DELAY_SECONDS:-5}"
 WAIT_ATTEMPT=1
 
 while [ "$WAIT_ATTEMPT" -le "$WAIT_RETRIES" ]; do
-  if curl -s "$BASE_URL/flow/parameter-contexts" | grep -q "parameterContexts"; then
+  if nifi_curl -s "$BASE_URL/flow/parameter-contexts" | grep -q "parameterContexts"; then
     break
   fi
   echo "NiFi API not ready yet (attempt $WAIT_ATTEMPT/$WAIT_RETRIES), retrying in ${WAIT_DELAY_SECONDS}s..."
@@ -30,7 +60,7 @@ echo "NiFi API is ready"
 
 echo "Creating Parameter Context..."
 
-CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/parameter-contexts" \
+CREATE_RESPONSE=$(nifi_curl -s -w "\n%{http_code}" -X POST "$BASE_URL/parameter-contexts" \
   -H "Content-Type: application/json" \
   -d "{
     \"revision\": { \"version\": 0 },
@@ -77,13 +107,14 @@ echo "Fetching Parameter Context ID..."
 
 # Retry until context appears
 for i in $(seq 1 10); do
-  PARAM_CONTEXT_ID=$(curl -s "$BASE_URL/flow/parameter-contexts" \
+  PARAM_CONTEXT_ID=$(nifi_curl -s "$BASE_URL/flow/parameter-contexts" \
     | tr -d '\n' \
     | sed 's/.*"parameterContexts":\[\(.*\)\].*/\1/' \
     | sed 's/},{/}\n{/g' \
     | grep "\"name\":\"$PB_CONTEXT_NAME\"" \
-    | sed 's/.*"id":"\([^"]*\)".*/\1/' \
-    | head -n 1)
+    | grep -o '"id":"[^"]*"' \
+    | head -n 1 \
+    | cut -d'"' -f4)
 
   if [ -n "$PARAM_CONTEXT_ID" ]; then
     break
@@ -102,7 +133,7 @@ echo "Parameter Context ID: $PARAM_CONTEXT_ID"
 
 echo "Ensuring required parameters exist in context..."
 
-CONTEXT_RESPONSE=$(curl -s -w "\n%{http_code}" "$BASE_URL/parameter-contexts/$PARAM_CONTEXT_ID")
+CONTEXT_RESPONSE=$(nifi_curl -s -w "\n%{http_code}" "$BASE_URL/parameter-contexts/$PARAM_CONTEXT_ID")
 CONTEXT_HTTP_CODE=$(echo "$CONTEXT_RESPONSE" | tail -n1)
 CONTEXT_BODY=$(echo "$CONTEXT_RESPONSE" | sed '$d')
 
@@ -155,7 +186,7 @@ if [ "$PARAMS_UPDATED" = "true" ]; then
     exit 1
   fi
 
-  UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT "$BASE_URL/parameter-contexts/$PARAM_CONTEXT_ID" \
+  UPDATE_RESPONSE=$(nifi_curl -s -w "\n%{http_code}" -X PUT "$BASE_URL/parameter-contexts/$PARAM_CONTEXT_ID" \
     -H "Content-Type: application/json" \
     -d "{
       \"revision\": { \"version\": $CONTEXT_REVISION_VERSION },
@@ -181,7 +212,7 @@ fi
 
 echo "Fetching Root Process Group ID..."
 
-ROOT_PG_ID=$(curl -s "$BASE_URL/flow/process-groups/root" \
+ROOT_PG_ID=$(nifi_curl -s "$BASE_URL/flow/process-groups/root" \
   | tr -d '\n' \
   | awk -F'"id":"' '{print $2}' \
   | cut -d'"' -f1 \
@@ -198,7 +229,7 @@ TEMPLATE_TARGET_PG_ID="${NIFI_TEMPLATE_TARGET_PG_ID:-$ROOT_PG_ID}"
 
 echo "Fetching revision..."
 
-REVISION_VERSION=$(curl -s "$BASE_URL/process-groups/$ROOT_PG_ID" \
+REVISION_VERSION=$(nifi_curl -s "$BASE_URL/process-groups/$ROOT_PG_ID" \
   | tr -d '\n' \
   | sed -n 's/.*"version":\([0-9]*\).*/\1/p' \
   | head -n 1)
@@ -212,7 +243,7 @@ echo "Revision: $REVISION_VERSION"
 
 echo "Applying Parameter Context..."
 
-curl -s -X PUT "$BASE_URL/process-groups/$ROOT_PG_ID" \
+nifi_curl -s -X PUT "$BASE_URL/process-groups/$ROOT_PG_ID" \
   -H "Content-Type: application/json" \
   -d "{
     \"revision\": { \"version\": $REVISION_VERSION },
@@ -228,7 +259,17 @@ echo "Parameter Context applied successfully"
 
 IMPORT_NIFI_TEMPLATE="${IMPORT_NIFI_TEMPLATE:-true}"
 
-if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
+# Instantiating a template always creates new components, so a rerun must not
+# import it again once the flow is on the canvas.
+flow_present() {
+  nifi_curl -s "$BASE_URL/flow/process-groups/$TEMPLATE_TARGET_PG_ID" \
+    | tr -d '\n' \
+    | grep -q '"processors":\[{'
+}
+
+if [ "$IMPORT_NIFI_TEMPLATE" = "true" ] && flow_present; then
+  echo "Flow already present in process group $TEMPLATE_TARGET_PG_ID; skipping template import"
+elif [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
   TEMPLATE_FILE="${NIFI_TEMPLATE_FILE:-/nifi/tazama.xml}"
   TEMPLATE_X="${NIFI_TEMPLATE_X:-0.0}"
   TEMPLATE_Y="${NIFI_TEMPLATE_Y:-0.0}"
@@ -243,7 +284,7 @@ if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
 
   echo "Uploading NiFi template from $TEMPLATE_FILE ..."
 
-  UPLOAD_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+  UPLOAD_RESPONSE=$(nifi_curl -s -w "\n%{http_code}" -X POST \
     "$BASE_URL/process-groups/$TEMPLATE_TARGET_PG_ID/templates/upload" \
     -H "Content-Type: multipart/form-data" \
     -F "template=@$TEMPLATE_FILE")
@@ -260,7 +301,7 @@ if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
         EXISTING_TEMPLATE_NAME="$TEMPLATE_NAME"
       fi
 
-      TEMPLATES_BODY=$(curl -s "$BASE_URL/flow/templates")
+      TEMPLATES_BODY=$(nifi_curl -s "$BASE_URL/flow/templates")
       TEMPLATE_ID=$(echo "$TEMPLATES_BODY" \
         | tr -d '\n' \
         | sed 's/},{/}\n{/g' \
@@ -301,6 +342,15 @@ if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
         | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
         | head -n 1)
     fi
+
+    # The upload endpoint answers in XML (<templateEntity><template><id>...</id>).
+    # Take the first <id> element.
+    if [ -z "$TEMPLATE_ID" ]; then
+      TEMPLATE_ID=$(echo "$UPLOAD_BODY" \
+        | tr -d '\n' \
+        | sed -n 's:</id>.*::; s:.*<id>\([^<]*\)$:\1:p' \
+        | head -n 1)
+    fi
   fi
 
   if [ -z "$TEMPLATE_ID" ]; then
@@ -311,7 +361,7 @@ if [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
 
   echo "Instantiating template ID: $TEMPLATE_ID"
 
-  INSTANTIATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+  INSTANTIATE_RESPONSE=$(nifi_curl -s -w "\n%{http_code}" -X POST \
     "$BASE_URL/process-groups/$TEMPLATE_TARGET_PG_ID/template-instance" \
     -H "Content-Type: application/json" \
     -d "{

@@ -14,10 +14,25 @@ services:
     environment:
       NIFI_JVM_HEAP_INIT: 512m
       NIFI_JVM_HEAP_MAX: 1g
+      # Authentication mode (none | keycloak); see README section 9.5
+      NIFI_AUTH: ${NIFI_AUTH:-none}
+      KEYCLOAK_ISSUER_URL: ${NIFI_KEYCLOAK_ISSUER_URL:-http://host.docker.internal:8080/realms/tazama}
+      KEYCLOAK_CLIENT_ID: ${NIFI_KEYCLOAK_CLIENT_ID:-nifi}
+      KEYCLOAK_CLIENT_SECRET: ${TAZAMA_NIFI_OIDC_CLIENT_SECRET:-}
+      NIFI_WEB_PROXY_HOST: ${NIFI_WEB_PROXY_HOST:-localhost:8443}
+      NIFI_SENSITIVE_PROPS_KEY: ${TAZAMA_NIFI_SENSITIVE_PROPS_KEY:-}
+      KEYSTORE_PASSWORD: ${TAZAMA_NIFI_KEYSTORE_PASSWORD:-}
+      TRUSTSTORE_PASSWORD: ${TAZAMA_NIFI_TRUSTSTORE_PASSWORD:-}
     ports:
-      - "${NIFI_PORT}:8088"
+      # none mode: HTTP, this machine only by default
+      - "${NIFI_BIND_ADDRESS:-127.0.0.1}:${NIFI_PORT:-8088}:8088"
+      # keycloak mode: HTTPS with Keycloak login
+      - "${NIFI_HTTPS_BIND_ADDRESS:-0.0.0.0}:${NIFI_HTTPS_PORT:-8443}:8443"
       - 8081:8081
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
+      - nifi_machine_identity:/opt/nifi/machine-identity
       - nifi_conf:/opt/nifi/nifi-current/conf
       - nifi_state:/opt/nifi/nifi-current/state
       - nifi_db:/opt/nifi/nifi-current/database_repository

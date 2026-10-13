@@ -9,6 +9,38 @@ pause() {
     read -rp " Press Enter to continue..."
 }
 
+env_value() {
+    [[ -f ./.env ]] || return 0
+    grep -E "^$1=" ./.env | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r'
+}
+
+# Show which NiFi authentication mode (NIFI_AUTH in .env) the next deploy uses.
+nifi_auth_status() {
+    local mode port https_port bind
+    mode=$(env_value NIFI_AUTH)
+    mode=$(echo "${mode:-none}" | tr '[:upper:]' '[:lower:]')
+    port=$(env_value NIFI_PORT)
+    https_port=$(env_value NIFI_HTTPS_PORT)
+    bind=$(env_value NIFI_BIND_ADDRESS)
+    bind=${bind:-127.0.0.1}
+
+    case "$mode" in
+        none)
+            if [[ "$bind" == "127.0.0.1" ]]; then
+                echo " NiFi auth: none  (http://localhost:${port:-8088}/nifi, this machine only)"
+            else
+                echo " NiFi auth: none  (http://localhost:${port:-8088}/nifi, NO LOGIN, open on ${bind})"
+            fi
+            ;;
+        keycloak)
+            echo " NiFi auth: keycloak  (https://localhost:${https_port:-8443}/nifi, needs core Authentication)"
+            ;;
+        *)
+            echo " NiFi auth: ${mode}  (unsupported; set NIFI_AUTH to none or keycloak in .env)"
+            ;;
+    esac
+}
+
 # Verify tazama-core is reachable via its NATS exterior port (14222).
 # SERVER_A_HOST defaults to localhost for single-machine; set to the private
 # IP in .env for AWS multi-host deployments.
@@ -112,6 +144,7 @@ menu() {
         echo "============================================================"
         echo ""
         echo " Pre-requisite: tazama-core must be running on Server A"
+        nifi_auth_status
         echo ""
         echo "   1. Deploy BIAR stack (DockerHub images)"
         echo "   2. Deploy BIAR stack (GitHub builds)"

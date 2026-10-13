@@ -11,6 +11,7 @@ echo  Tazama BIAR Launcher
 echo ============================================================
 echo.
 echo  Pre-requisite: tazama-core must be running on Server A
+call :nifi_auth_status
 echo.
 echo    1. Deploy BIAR stack (DockerHub images)
 echo    2. Deploy BIAR stack (GitHub builds)
@@ -110,6 +111,39 @@ echo.
 echo  Done.
 pause
 goto :menu
+
+:: ---------------------------------------------------------------
+:: Show which NiFi authentication mode (NIFI_AUTH in .env) the next deploy uses
+:: ---------------------------------------------------------------
+:nifi_auth_status
+set "NIFI_AUTH_SHOW=none"
+set "NIFI_PORT_SHOW=8088"
+set "NIFI_HTTPS_PORT_SHOW=8443"
+set "NIFI_BIND_SHOW=127.0.0.1"
+for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+    if /i "%%A"=="NIFI_AUTH" set "NIFI_AUTH_SHOW=%%B"
+    if /i "%%A"=="NIFI_PORT" set "NIFI_PORT_SHOW=%%B"
+    if /i "%%A"=="NIFI_HTTPS_PORT" set "NIFI_HTTPS_PORT_SHOW=%%B"
+    if /i "%%A"=="NIFI_BIND_ADDRESS" set "NIFI_BIND_SHOW=%%B"
+)
+if "!NIFI_AUTH_SHOW!"=="" set "NIFI_AUTH_SHOW=none"
+if "!NIFI_PORT_SHOW!"=="" set "NIFI_PORT_SHOW=8088"
+if "!NIFI_HTTPS_PORT_SHOW!"=="" set "NIFI_HTTPS_PORT_SHOW=8443"
+if "!NIFI_BIND_SHOW!"=="" set "NIFI_BIND_SHOW=127.0.0.1"
+if /i "!NIFI_AUTH_SHOW!"=="none" (
+    if "!NIFI_BIND_SHOW!"=="127.0.0.1" (
+        echo  NiFi auth: none  ^(http://localhost:!NIFI_PORT_SHOW!/nifi, this machine only^)
+    ) else (
+        echo  NiFi auth: none  ^(http://localhost:!NIFI_PORT_SHOW!/nifi, NO LOGIN, open on !NIFI_BIND_SHOW!^)
+    )
+    exit /b 0
+)
+if /i "!NIFI_AUTH_SHOW!"=="keycloak" (
+    echo  NiFi auth: keycloak  ^(https://localhost:!NIFI_HTTPS_PORT_SHOW!/nifi, needs core Authentication^)
+    exit /b 0
+)
+echo  NiFi auth: !NIFI_AUTH_SHOW!  (unsupported; set NIFI_AUTH to none or keycloak in .env)
+exit /b 0
 
 :quit
 endlocal
