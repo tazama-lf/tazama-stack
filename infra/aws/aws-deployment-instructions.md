@@ -1495,7 +1495,8 @@ before moving on to the next. The runnable scripts are, in order:
 | `Set-RemoteEnvOverlay` | Reads a `KEY=VALUE` overlay (from a local file via `-OverlayFile` or an inline string via `-OverlayContent`) and applies each entry to a remote `.env` using `sed` (replaces existing keys, appends missing ones). Exactly one of the two parameters must be supplied. |
 | `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL and sources `NEXTAUTH_SECRET` from SSM into `core/.env`. No-op when no custom domain is active. |
 | `Set-JupyterHubOidcOverlay` | Writes the JupyterHub public URL and the OIDC client secret (from SSM) into `core/.env` for the Keycloak realm import of the `jupyterhub` client. No-op when no custom domain is active. |
-| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays (`env-extensions.tpl` / `env-biar.tpl`, `KEYCLOAK_HOSTNAME`, `KC_HOSTNAME_PORT` strip, demo UI overlay, JupyterHub OIDC overlay) - used after any `git reset --hard` on the target server |
+| `Set-BiarServiceEnvOverlay` | Server C: writes the public Keycloak/hub URLs and the SSM JupyterHub client secret and crypt key into `biar/env/biar-jupyterhub.env`, and `COUCHDB_URL` (SSM CouchDB password) into `biar/env/biar-unstructured-pipeline.env`. Throws when a JupyterHub parameter is missing. |
+| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays (`env-extensions.tpl` / `env-biar.tpl`, `KEYCLOAK_HOSTNAME`, `KC_HOSTNAME_PORT` strip, demo UI overlay, JupyterHub OIDC overlay, NiFi and biar service overlays on C) - used by `deploy-biar.ps1` and after any `git reset --hard` on the target server |
 | `Wait-Bootstrap` | Polls every 30 s until `/home/ec2-user/.bootstrap-complete` exists on the remote instance |
 
 **EICE SSH ProxyCommand used internally:**
@@ -1594,10 +1595,13 @@ docker compose -p tazama-core \
 
 1. Waits for bootstrap on Server C (up to 15 min)
 2. Pulls the latest repo on Server C - ensures the server is on the correct branch
-3. Applies `templates/env-biar.tpl` overlay to `biar/.env` (which arrives via git pull) - sets all three host vars:
-   - `SERVER_A_HOST=core.tazama.internal`
-   - `SERVER_B_HOST=extensions.tazama.internal`
-   - `SERVER_C_HOST=biar.tazama.internal`
+3. Applies the Server C env overlays via `Set-ServerEnvOverlays -Server C` (stops before any container starts if a required SSM parameter is missing):
+   - `templates/env-biar.tpl` into `biar/.env` (which arrives via git pull) - sets all three host vars:
+     - `SERVER_A_HOST=core.tazama.internal`
+     - `SERVER_B_HOST=extensions.tazama.internal`
+     - `SERVER_C_HOST=biar.tazama.internal`
+   - NiFi keycloak mode with SSM secrets (`Set-NifiAuthOverlay`)
+   - JupyterHub Keycloak settings and the CouchDB URL in the service env files (`Set-BiarServiceEnvOverlay`)
 4. Creates the Tazama warehouse directory: `sudo mkdir -p /opt/Tazama_Warehouse` - bind-mounted by automation-orchestrator and datalakehouse-api
 5. **Staged Ozone startup** (SCM must fully initialise before OM and datanodes):
    - Starts `scm` only, waits 20 s for SCM to initialise
@@ -1762,7 +1766,8 @@ Provides the following functions:
 | `Set-RemoteEnvOverlay` | Reads a `KEY=VALUE` overlay (from a local file via `-OverlayFile` or an inline string via `-OverlayContent`) and applies each entry to a remote `.env` file using `sed` (replaces existing keys, appends missing ones). Exactly one of the two parameters must be supplied. |
 | `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL (`DEMO_PUBLIC_URL`) and sources `DEMO_NEXTAUTH_SECRET` from SSM into `core/.env`. No-op when no custom domain is active. Shared by deploy-core, deploy-service, and restart-service. |
 | `Set-JupyterHubOidcOverlay` | Writes `JUPYTERHUB_PUBLIC_URL` (`https://jupyter.<your-zone>`) and `JUPYTERHUB_OIDC_CLIENT_SECRET` (from SSM `/tazama/creds/jupyterhub/oidc-client-secret`) into `core/.env` on Server A. Keycloak resolves both into the `jupyterhub` client when it imports the realm. No-op when no custom domain is active; if the SSM parameter is missing it warns and blanks the key, so the import falls back to the committed test secret. |
-| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays after a `git reset --hard` restores committed local-dev defaults: `env-extensions.tpl` (A and B), `env-biar.tpl` (C), `KEYCLOAK_HOSTNAME` injection and `KC_HOSTNAME_PORT` strip (A), the demo UI overlay (A), and the JupyterHub OIDC overlay (A). |
+| `Set-BiarServiceEnvOverlay` | Server C. Writes `KEYCLOAK_ISSUER_URL`, `JUPYTERHUB_PUBLIC_URL`, `KEYCLOAK_CLIENT_SECRET` (SSM `/tazama/creds/jupyterhub/oidc-client-secret`) and `JUPYTERHUB_CRYPT_KEY` (SSM `/tazama/creds/jupyterhub/crypt_key`) into `biar/env/biar-jupyterhub.env`, and `COUCHDB_URL` (user `simon`, SSM `/tazama/creds/couchdb/password`) into `biar/env/biar-unstructured-pipeline.env`. `$` is written as `$$` because Compose interpolates env files. Without a custom domain the JupyterHub part is skipped with a warning; a missing JupyterHub parameter throws; a missing CouchDB parameter warns and keeps the committed URL. |
+| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays after a `git reset --hard` restores committed local-dev defaults: `env-extensions.tpl` (A and B), `env-biar.tpl` (C), `KEYCLOAK_HOSTNAME` injection and `KC_HOSTNAME_PORT` strip (A), the demo UI overlay (A), the JupyterHub OIDC overlay (A), and the NiFi auth and biar service overlays (C). |
 | `Wait-Bootstrap` | Polls an instance until the bootstrap script has written its completion marker (up to 15 min) |
 
 (`New-SshConfig` is an internal helper that writes the temporary per-connection SSH config with the EICE ProxyCommand; it is not called by other scripts directly.)
@@ -3012,14 +3017,14 @@ Invoke-RestMethod http://localhost:8000/hub/health
 
 > **JupyterHub login (Keycloak mode, the default).** Open `https://jupyter.<your-zone>`; JupyterHub sends you to the Keycloak login page. Accounts are Keycloak users with the `JUPYTER_USER` or `JUPYTER_ADMIN` realm role, granted through the `/tazama-jupyter/JUPYTER_USER/<ORG>` and `/tazama-jupyter/JUPYTER_ADMIN/<ORG>` groups. The realm import includes the test user `jupyter-user@tazama.org` / `password`; change its password or remove it on any shared deployment. There is no sign-up and no `/hub/authorize` approval step. See [biar/README.md section 9.4](../../biar/README.md#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance).
 >
-> **Hub settings on Server C.** `biar/env/biar-jupyterhub.env` must point at the public Keycloak and hub URLs and use the same client secret as the realm. `deploy-biar.ps1` does not overlay this file yet (tracked in [#285](https://github.com/tazama-lf/tazama-stack/issues/285)), and its `git reset --hard` restores the committed local defaults. After each `deploy-biar.ps1`, set these values on Server C and recreate `biar-jupyterhub`:
+> **Hub settings on Server C.** `biar/env/biar-jupyterhub.env` must point at the public Keycloak and hub URLs and use the same client secret as the realm. `deploy-biar.ps1` (and `deploy-service.ps1` / `restart-service.ps1` after a repo reset on C) writes these values with `Set-BiarServiceEnvOverlay`, and stops before starting any container if either SSM parameter is missing:
 >
 > | Variable | Value |
 > |---|---|
 > | `KEYCLOAK_ISSUER_URL` | `https://keycloak.<your-zone>/realms/tazama` |
 > | `JUPYTERHUB_PUBLIC_URL` | `https://jupyter.<your-zone>` |
 > | `KEYCLOAK_CLIENT_SECRET` | SSM `/tazama/creds/jupyterhub/oidc-client-secret` |
-> | `JUPYTERHUB_CRYPT_KEY` | SSM `/tazama/creds/jupyterhub/crypt_key` (create with `openssl rand -hex 32`) |
+> | `JUPYTERHUB_CRYPT_KEY` | SSM `/tazama/creds/jupyterhub/crypt_key` (create with `aws ssm put-parameter --name /tazama/creds/jupyterhub/crypt_key --type SecureString --value (openssl rand -hex 32)`) |
 >
 > **Native mode (`JUPYTERHUB_AUTH=native` only).** The rest of this note applies only if you switch the hub back to the native sign-up authenticator. Signup is disabled by default (`open_signup = False`). The first admin account must be created and then authorized manually:
 >

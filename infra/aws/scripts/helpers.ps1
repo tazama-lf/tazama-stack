@@ -15,6 +15,7 @@
       - Set-JupyterHubOidcOverlay - apply JupyterHub public URL + SSM OIDC client secret for the Keycloak realm import
       - Set-NifiOidcOverlay  - apply NiFi public URL + SSM OIDC client secret for the Keycloak realm import
       - Set-NifiAuthOverlay  - switch biar-nifi to keycloak mode with SSM secrets (Server C)
+      - Set-BiarServiceEnvOverlay - apply JupyterHub OIDC + CouchDB settings to biar service env files (Server C)
       - Set-SmtpOverlay      - apply CMS SMTP credentials from SSM
       - Set-ServerEnvOverlays - re-apply a server's full per-server AWS env overlays
       - Wait-Bootstrap       - poll until the bootstrap script has completed
@@ -405,6 +406,91 @@ function Set-NifiAuthOverlay {
     Write-Host "[$ServerLabel] NiFi auth overlay applied." -ForegroundColor Green
 }
 
+# -- Set-BiarServiceEnvOverlay ------------------------------------------------
+# Apply the AWS values to the Server C service env files that a
+# 'git reset --hard' restores to their local-dev defaults:
+#   biar/env/biar-jupyterhub.env
+#     KEYCLOAK_ISSUER_URL, JUPYTERHUB_PUBLIC_URL - from the tofu outputs
+#     KEYCLOAK_CLIENT_SECRET - SSM /tazama/creds/jupyterhub/oidc-client-secret
+#       (the same secret Set-JupyterHubOidcOverlay gives the realm import)
+#     JUPYTERHUB_CRYPT_KEY   - SSM /tazama/creds/jupyterhub/crypt_key
+#   biar/env/biar-unstructured-pipeline.env
+#     COUCHDB_URL - user simon on Server B, password from SSM
+#       /tazama/creds/couchdb/password
+#
+# Compose interpolates env_file values, so every '$' is written as '$$'.
+# All SSM reads happen before any file is written.
+# JupyterHub: skipped with a warning when no custom domain is active; throws
+# when either SSM parameter is missing (the hub would otherwise start with the
+# committed test secret and crypt key).
+# CouchDB: warns and keeps the committed value when the parameter is missing;
+# throws when the password contains @ : / ? # % (they would break the URL).
+function Set-BiarServiceEnvOverlay {
+    param(
+        [string]$InstanceId,
+        [hashtable]$TofuOutputs,
+        [string]$ServerLabel = 'Server C'
+    )
+
+    $jhOverlay = $null
+    if (-not $TofuOutputs.JupyterPublicUrl -or -not $TofuOutputs.KeycloakHostname) {
+        Write-Warning "[$ServerLabel] No custom domain (tofu outputs jupyter_public_url / keycloak_hostname are empty) - biar-jupyterhub.env keeps its local defaults."
+    } else {
+        $jhLines = @(
+            "KEYCLOAK_ISSUER_URL=https://$($TofuOutputs.KeycloakHostname)/realms/tazama"
+            "JUPYTERHUB_PUBLIC_URL=$($TofuOutputs.JupyterPublicUrl)"
+        )
+        $jhParams = [ordered]@{
+            KEYCLOAK_CLIENT_SECRET = '/tazama/creds/jupyterhub/oidc-client-secret'
+            JUPYTERHUB_CRYPT_KEY   = '/tazama/creds/jupyterhub/crypt_key'
+        }
+        foreach ($key in $jhParams.Keys) {
+            $name = $jhParams[$key]
+            $value = aws ssm get-parameter `
+                --name $name `
+                --with-decryption `
+                --region $Script:AwsRegion `
+                --profile $Script:AwsProfile `
+                --query Parameter.Value `
+                --output text 2>$null
+            if ($LASTEXITCODE -ne 0 -or -not $value) {
+                throw "[$ServerLabel] SSM parameter $name not found - refusing to deploy JupyterHub with the committed test values. Seed it first: aws ssm put-parameter --name $name --type SecureString --value <openssl rand -hex 32>"
+            }
+            $jhLines += "$key=$($value -replace '\$', '$$$$')"
+        }
+        $jhOverlay = $jhLines -join "`n"
+    }
+
+    $couchOverlay = $null
+    $couchPass = aws ssm get-parameter `
+        --name /tazama/creds/couchdb/password `
+        --with-decryption `
+        --region $Script:AwsRegion `
+        --profile $Script:AwsProfile `
+        --query Parameter.Value `
+        --output text 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $couchPass) {
+        Write-Warning "[$ServerLabel] /tazama/creds/couchdb/password not found in SSM - biar-unstructured-pipeline keeps the committed COUCHDB_URL (local default password)."
+    } elseif ($couchPass -match '[@:/?#%\s\[\]\\]') {
+        throw "[$ServerLabel] /tazama/creds/couchdb/password contains whitespace or one of the characters @ : / ? # % [ ] \ - not supported in COUCHDB_URL."
+    } else {
+        $couchOverlay = "COUCHDB_URL=http://simon:$($couchPass -replace '\$', '$$$$')@extensions.tazama.internal:5984/cms-evidence"
+    }
+
+    Write-Host "[$ServerLabel] Applying biar service env overlay (JupyterHub + CouchDB, secrets from SSM)..."
+    if ($jhOverlay) {
+        Set-RemoteEnvOverlay -InstanceId $InstanceId `
+            -OverlayContent $jhOverlay `
+            -RemoteEnvFile "$Script:RemoteRepo/biar/env/biar-jupyterhub.env"
+    }
+    if ($couchOverlay) {
+        Set-RemoteEnvOverlay -InstanceId $InstanceId `
+            -OverlayContent $couchOverlay `
+            -RemoteEnvFile "$Script:RemoteRepo/biar/env/biar-unstructured-pipeline.env"
+    }
+    Write-Host "[$ServerLabel] biar service env overlay applied." -ForegroundColor Green
+}
+
 # -- Set-SmtpOverlay ----------------------------------------------------------
 # Inject the CMS email credentials from SSM (/tazama/smtp_user, /tazama/smtp_pass)
 # into extensions/.env on Server B. The committed case-management-system.env
@@ -475,12 +561,16 @@ function Set-SmtpOverlay {
 #              throws when the SSM parameter is missing).
 #   Server B : extensions/.env overlay; CMS SMTP credentials from SSM (see
 #              Set-SmtpOverlay).
-#   Server C : biar/.env overlay (host names, S3A_ENDPOINT, COUCHDB_URL); NiFi
-#              keycloak mode + SSM secrets (see Set-NifiAuthOverlay - throws
-#              when the custom domain or the SSM parameters are missing).
+#   Server C : biar/.env overlay (host names, S3A_ENDPOINT); NiFi keycloak
+#              mode + SSM secrets (see Set-NifiAuthOverlay - throws when the
+#              custom domain or the SSM parameters are missing); JupyterHub
+#              OIDC + CouchDB settings in the service env files (see
+#              Set-BiarServiceEnvOverlay - throws when the JupyterHub SSM
+#              parameters are missing).
 #
-# Shared by deploy-core.ps1, deploy-service.ps1 and restart-service.ps1 so the
-# overlay set stays identical across initial deploys and post-reset restores.
+# Shared by deploy-core.ps1, deploy-biar.ps1, deploy-service.ps1 and
+# restart-service.ps1 so the overlay set stays identical across initial
+# deploys and post-reset restores.
 # -SkipExtensionsOverlay is used by deploy-core.ps1, whose scope is the core
 # stack only - the extensions/.env overlay on Server A is owned by
 # deploy-extensions.ps1.
@@ -540,7 +630,7 @@ function Set-ServerEnvOverlays {
             Set-SmtpOverlay -InstanceId $InstanceId -ServerLabel $label
         }
         'C' {
-            # biar/.env: SERVER_A/B/C_HOST, S3A_ENDPOINT, COUCHDB_URL
+            # biar/.env: SERVER_A/B/C_HOST, S3A_ENDPOINT
             Write-Host "[$label] Re-applying biar .env overlay..."
             Set-RemoteEnvOverlay -InstanceId $InstanceId `
                 -OverlayFile (Join-Path $Script:TemplatesDir 'env-biar.tpl') `
@@ -548,6 +638,9 @@ function Set-ServerEnvOverlays {
 
             # biar/.env: NiFi keycloak mode + SSM secrets (throws if not seeded)
             Set-NifiAuthOverlay -InstanceId $InstanceId -TofuOutputs $TofuOutputs -ServerLabel $label
+
+            # biar/env/*.env: JupyterHub OIDC + CouchDB URL (throws if JupyterHub secrets not seeded)
+            Set-BiarServiceEnvOverlay -InstanceId $InstanceId -TofuOutputs $TofuOutputs -ServerLabel $label
         }
     }
 }
