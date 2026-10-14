@@ -3202,7 +3202,7 @@ Then re-run the deploy scripts with the new password so all service env files ar
 
 On AWS, NiFi always runs in keycloak mode (`NIFI_AUTH=keycloak`): HTTPS on :8443, login through Keycloak, and access granted to members of the `NIFI_ADMIN` group. The ALB reaches it only through `https://nifi.<your-zone>`; there is no port listener and no tunnel. Keycloak mode **requires the custom domain** (`enable_custom_domain = true`); `deploy-biar.ps1` fails closed without it.
 
-**Step 1 - Seed the four SSM parameters** (see A.7): `/tazama/creds/nifi/oidc-client-secret`, `sensitive-props-key` (12+ characters), `keystore-password`, `truststore-password`. Values must not contain `$`, `|`, `&` or `\`. Until these exist, `deploy-biar.ps1` and `Set-ServerEnvOverlays -Server C` stop with an error.
+**Step 1 - Seed the four SSM parameters** (see A.7): `/tazama/creds/nifi/oidc-client-secret`, `sensitive-props-key` (12+ characters), `keystore-password`, `truststore-password`. Values must not contain `$`, `|`, `&` or `\`. Until these exist, `deploy-core.ps1`, `deploy-biar.ps1` and `Set-ServerEnvOverlays` (A: the OIDC client secret; C: all four) stop with an error.
 
 **Step 2 - Keycloak realm.** A fresh realm import already contains the client and groups; `deploy-core.ps1` writes the client secret (from SSM) and the public URL into `core/.env`. On an existing realm (import is skipped), add them once with kcadm in the `keycloak` container:
 
@@ -3281,7 +3281,7 @@ See A.6. OpenSearch is currently running with `DISABLE_SECURITY_PLUGIN=true`. Th
 | ALB HTTPS with ACM certificates | ✅ Done | - |
 | ALB Keycloak authentication on listeners | ✅ Done | - |
 | PostgreSQL passwords rotated | ❌ Default (`unused`) | G.2 - rotate and store in SSM |
-| NiFi login enforced | ❌ HTTP, no auth | G.2 - enable HTTPS, set password |
+| NiFi login enforced | ✅ Keycloak login (NIFI_ADMIN group) | - |
 | Voila notebook server auth | ❌ Public, no auth | G.4 - place behind Keycloak/OIDC proxy or restrict ALB ingress CIDR to VPN/office IPs |
 | Voila iframe CSP + mixed content | ⏳ Fix in PR #180 | Pending CMS image update ([case-management-system #92](https://github.com/tazama-lf/case-management-system/issues/92)) - env vars staged in `env-extensions.tpl` |
 | Ozone S3G credentials rotated | ❌ Default (`tazama`/`tazama`) | G.2 - rotate key/secret |

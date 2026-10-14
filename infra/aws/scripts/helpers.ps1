@@ -304,7 +304,8 @@ function Set-JupyterHubOidcOverlay {
 # which must match the registered redirect URI exactly.
 # The NiFi side (biar/.env on Server C) is configured by Set-NifiAuthOverlay.
 #
-# No-op when $NifiPublicUrl is empty (custom domain not enabled).
+# Throws when the SSM parameter is missing. No-op when $NifiPublicUrl is empty
+# (custom domain not enabled).
 function Set-NifiOidcOverlay {
     param(
         [string]$InstanceId,
@@ -323,16 +324,13 @@ function Set-NifiOidcOverlay {
         --profile $Script:AwsProfile `
         --query Parameter.Value `
         --output text 2>$null
-    if ($LASTEXITCODE -eq 0 -and $nifiSecret) {
-        $nifiOverlay += "`nTAZAMA_NIFI_OIDC_CLIENT_SECRET=$nifiSecret"
-    } else {
-        # Blank the key so a stale secret from an earlier run cannot survive;
-        # compose ${TAZAMA_NIFI_OIDC_CLIENT_SECRET:-...} treats empty as unset.
-        # Server C refuses keycloak mode without this parameter (Set-NifiAuthOverlay),
-        # so the committed test secret cannot end up paired with a live NiFi.
-        $nifiOverlay += "`nTAZAMA_NIFI_OIDC_CLIENT_SECRET="
-        Write-Warning "[$ServerLabel] /tazama/creds/nifi/oidc-client-secret not found in SSM - a fresh realm import uses the committed test secret. Set it with: aws ssm put-parameter --name /tazama/creds/nifi/oidc-client-secret --type SecureString --value <openssl rand -hex 32>"
+    if ($LASTEXITCODE -ne 0 -or -not $nifiSecret) {
+        # Fail closed: a fresh realm import would otherwise register the nifi
+        # client with the committed test secret, and IGNORE_EXISTING keeps it
+        # there even after the parameter is seeded.
+        throw "[$ServerLabel] /tazama/creds/nifi/oidc-client-secret not found in SSM. Seed it first: aws ssm put-parameter --name /tazama/creds/nifi/oidc-client-secret --type SecureString --value <openssl rand -hex 32> (see aws-deployment-instructions.md G.2)"
     }
+    $nifiOverlay += "`nTAZAMA_NIFI_OIDC_CLIENT_SECRET=$nifiSecret"
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
         -OverlayContent $nifiOverlay `
         -RemoteEnvFile "$Script:RemoteRepo/core/.env"
@@ -473,7 +471,8 @@ function Set-SmtpOverlay {
 #              KC_HOSTNAME_PORT from keycloak.env; and the tazama-demo public
 #              URL + NEXTAUTH_SECRET (see Set-DemoUiOverlay); the JupyterHub
 #              public URL + OIDC client secret (see Set-JupyterHubOidcOverlay);
-#              the NiFi public URL + OIDC client secret (see Set-NifiOidcOverlay).
+#              the NiFi public URL + OIDC client secret (see Set-NifiOidcOverlay -
+#              throws when the SSM parameter is missing).
 #   Server B : extensions/.env overlay; CMS SMTP credentials from SSM (see
 #              Set-SmtpOverlay).
 #   Server C : biar/.env overlay (host names, S3A_ENDPOINT, COUCHDB_URL); NiFi
