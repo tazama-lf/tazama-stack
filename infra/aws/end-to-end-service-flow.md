@@ -61,7 +61,7 @@ flowchart TD
     end
 
     subgraph SC["Server C — biar.tazama.internal — 10.0.1.30"]
-        NiFi["NiFi :8088"]
+        NiFi["NiFi :8443"]
         AO["Automation Orchestrator :7619"]
         DLH["Datalakehouse API :8282"]
         JH["JupyterHub :8000"]
@@ -101,7 +101,7 @@ flowchart TD
     ALB -- ":5051" --> PGB
 
     %% ── ALB → Server C ───────────────────────────────────────────────────
-    ALB -- ":8088" --> NiFi
+    ALB -- "443 nifi.domain → :8443 HTTPS" --> NiFi
     ALB -- ":8000" --> JH
     ALB -- ":7619 (listener only)" --> AO
     ALB -- ":8282 (listener only)" --> DLH
@@ -373,7 +373,7 @@ OpenSearch, and the Ozone object store on Server C. The Datalakehouse API expose
 ```mermaid
 sequenceDiagram
     autonumber
-    participant NiFi as NiFi<br/>Server C :8088
+    participant NiFi as NiFi<br/>Server C :8443
     participant AO as Automation Orchestrator<br/>Server C :7619
     participant DLH as Datalakehouse API<br/>Server C :8282
     participant JH as JupyterHub<br/>Server C :8000
@@ -486,7 +486,7 @@ corresponding Security Group ingress rules to be in place.
 | Server B | 5173 | TCS Frontend |
 | Server B | 5174 | TRS Frontend |
 | Server B | 5175 | CMS Frontend |
-| Server C | 8088 | NiFi UI |
+| Server C | 8443 | NiFi UI (HTTPS, Keycloak login) |
 | Server C | 8000 `†` | JupyterHub |
 | Server C | 7619 `†` | Automation Orchestrator |
 | Server C | 8282 `†` | Datalakehouse API |

@@ -55,13 +55,13 @@ Write-Host '  15433 -> PostgreSQL (CMS)'
 Write-Host '  12222 -> SFTP'
 Write-Host ''
 Write-Host 'Server C (tazama-biar):'
-Write-Host '  8088  -> NiFi'
 Write-Host '  8983  -> Solr'
 Write-Host '  9998  -> Apache Tika'
 Write-Host '  9874  -> Ozone OM'
 Write-Host '  9876  -> Ozone SCM'
 Write-Host '  9878  -> Ozone S3 Gateway'
 Write-Host '  9888  -> Ozone Recon'
+Write-Host '  (NiFi is not tunnelled: https://nifi.<domain>/nifi, Keycloak login)'
 Write-Host ''
 Write-Host 'Press Ctrl+C to close all tunnels.' -ForegroundColor Yellow
 Write-Host ''
@@ -128,7 +128,7 @@ $jobB = Start-TunnelJob -Label 'TunnelB' -InstanceId $idB -Forwards @(
 ) @commonArgs
 
 $jobC = Start-TunnelJob -Label 'TunnelC' -InstanceId $idC -Forwards @(
-    '8088:localhost:8088', '8983:localhost:8983', '9998:localhost:9998',
+    '8983:localhost:8983', '9998:localhost:9998',
     '9874:localhost:9874', '9876:localhost:9876', '9878:localhost:9878',
     '9888:localhost:9888'
 ) @commonArgs

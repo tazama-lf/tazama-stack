@@ -205,7 +205,7 @@ Three private EC2 instances sit behind an Application Load Balancer. No instance
      │  :3090  → Server B  cms-api                                  │
      │  :18866 → Server B  voila                                    │
      │  :5051  → Server B  pgAdmin (extensions)                     │
-     │  :8088  → Server C  nifi                                     │
+     │  443 nifi.<domain> only → Server C  nifi :8443 (HTTPS)       │
      │  :8000  → Server C  jupyterhub                               │
      │  :7619  → Server C  auto-orchestrator                        │
      │  :8282  → Server C  datalakehouse-api                        │
@@ -218,7 +218,7 @@ Three private EC2 instances sit behind an Application Load Balancer. No instance
     │   tazama-core  │  │  extensions    │  │   biar          │
     │   10.0.1.10    │  │  10.0.1.20     │  │   10.0.1.30     │
     │                │  │                │  │                 │
-    │  tms     :5000 │  │ tcs    :5173   │  │ nifi       :8088│
+    │  tms     :5000 │  │ tcs    :5173   │  │ nifi       :8443│
     │  admin   :5100 │  │ tcs-api:3010   │  │ jupyterhub :8000│
     │  auth    :3020 │  │ trs    :5174   │  │ auto-orch  :7619│
     │  keycloak:8080 │  │ trs-api:3005   │  │ dlh-api    :8282│
@@ -379,7 +379,10 @@ Several services use different variable names for the same underlying credential
 | `/tazama/relay_auth_password` | REST relay auth | `core/env/relay-service-rest.env` |
 | `/tazama/cms_auth_admin_password` | CMS Tazama auth admin | `extensions/env/case-management-system.env` |
 | `/tazama/cms_flowable_password` | CMS Flowable engine | `extensions/env/case-management-system.env` |
-| `/tazama/nifi_admin_password` | NiFi single-user admin | `biar/docker-compose.biar.infrastructure.yaml` - NiFi requires min 12 chars |
+| `/tazama/creds/nifi/oidc-client-secret` | NiFi Keycloak OIDC client (**implemented**, required) | Read by `Set-NifiAuthOverlay` (Server C, `biar/.env`) and `Set-NifiOidcOverlay` (Server A, `core/.env`, realm import) - see G.2 |
+| `/tazama/creds/nifi/sensitive-props-key` | NiFi flow sensitive-property encryption (**implemented**, required) | `biar/.env` - min 12 chars; hex only (no `$ \| & \`) |
+| `/tazama/creds/nifi/keystore-password` | NiFi TLS keystore (**implemented**, required) | `biar/.env` |
+| `/tazama/creds/nifi/truststore-password` | NiFi TLS truststore (**implemented**, required) | `biar/.env` |
 | `/tazama/ozone_s3g_secret_key` | Apache Ozone S3G | `biar/docker-compose.biar.infrastructure.yaml` |
 | `/tazama/opensearch_password` | OpenSearch admin | `extensions/env/case-management-system.env`, `connection-studio.env`, `rule-studio.env` - see also A.6 |
 | `/tazama/sftp_password` | SFTP server user | Special case - see note below |
@@ -403,7 +406,10 @@ Several services use different variable names for the same underlying credential
 | `/tazama/relay_auth_password` | `AUTH_PASSWORD` | `core/env/relay-service-rest.env` |
 | `/tazama/cms_auth_admin_password` | `TAZAMA_AUTH_ADMIN_PASSWORD` | `extensions/env/case-management-system.env` |
 | `/tazama/cms_flowable_password` | `FLOWABLE_PASSWORD` | `extensions/env/case-management-system.env` |
-| `/tazama/nifi_admin_password` | `SINGLE_USER_CREDENTIALS_PASSWORD` | `biar/docker-compose.biar.infrastructure.yaml` |
+| `/tazama/creds/nifi/oidc-client-secret` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `biar/.env` (Server C), `core/.env` (Server A, Keycloak realm import) |
+| `/tazama/creds/nifi/sensitive-props-key` | `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` | `biar/.env` |
+| `/tazama/creds/nifi/keystore-password` | `TAZAMA_NIFI_KEYSTORE_PASSWORD` | `biar/.env` |
+| `/tazama/creds/nifi/truststore-password` | `TAZAMA_NIFI_TRUSTSTORE_PASSWORD` | `biar/.env` |
 | `/tazama/ozone_s3g_secret_key` | `OZONE-SITE.XML_ozone.s3g.secret.key` | `biar/docker-compose.biar.infrastructure.yaml` |
 | `/tazama/opensearch_password` | `OPENSEARCH_PASSWORD`, `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | `extensions/env/case-management-system.env`, `connection-studio.env`, `rule-studio.env` |
 | `/tazama/sftp_password` | `SFTP_PASSWORD_CONSUMER`, `SFTP_PASSWORD_PRODUCER` | `extensions/env/connection-studio.env` - see note below |
@@ -494,11 +500,14 @@ aws ssm put-parameter --name /tazama/cms_flowable_password --type SecureString `
   --description "CMS Flowable workflow engine password" `
   --region $region --profile $profile
 
-# NiFi admin password (minimum 12 characters enforced by NiFi)
-aws ssm put-parameter --name /tazama/nifi_admin_password --type SecureString `
-  --value "<generate-12-char-minimum-password>" `
-  --description "NiFi single-user admin password" `
-  --region $region --profile $profile
+# NiFi (keycloak mode) - four secrets, all REQUIRED: deploy-biar.ps1 refuses to
+# deploy without them. Use hex values: '$', '|', '&' and '\' are rejected.
+foreach ($n in 'oidc-client-secret', 'sensitive-props-key', 'keystore-password', 'truststore-password') {
+  aws ssm put-parameter --name "/tazama/creds/nifi/$n" --type SecureString `
+    --value ([Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()) `
+    --description "NiFi $n" `
+    --region $region --profile $profile
+}
 
 # Apache Ozone S3G secret key
 aws ssm put-parameter --name /tazama/ozone_s3g_secret_key --type SecureString `
@@ -1134,8 +1143,9 @@ Four security groups. EC2 instances have **no internet-facing inbound rules** - 
 | Inbound | 3005–3090 | TCP | `0.0.0.0/0` | TRS / TCS / CMS backends |
 | Inbound | 5173–5175 | TCP | `0.0.0.0/0` | TCS / TRS / CMS frontends |
 | Inbound | 18866 | TCP | `0.0.0.0/0` | Voila (CMS notebook server) |
-| Inbound | 8088 | TCP | `0.0.0.0/0` | NiFi UI |
 | Outbound | All | All | `0.0.0.0/0` | Routing to EC2 target groups |
+
+> NiFi has **no** public port: it serves HTTPS on :8443 with a Keycloak login and is reachable only as `https://nifi.<domain>` via the 443 host rule (custom domain required; see G.2). The ALB talks HTTPS to it and has no port-based listener for it.
 
 > JupyterHub (:8000), Automation Orchestrator (:7619), Datalakehouse API (:8282), CouchDB (:5984), and the Tazama Demo UI (:3011) have ALB target groups and listeners, but their ports are **not** open in the ALB SG - they are accessed via the HTTPS subdomain (port 443) or SSH tunnel (Phase E.1). Add the plain HTTP port to the ALB SG only if port-based HTTP access is needed.
 
@@ -1171,7 +1181,7 @@ Four security groups. EC2 instances have **no internet-facing inbound rules** - 
 
 | Direction | Port(s) | Protocol | Source | Notes |
 |---|---|---|---|---|
-| Inbound | 8088 | TCP | sg-tazama-alb | NiFi UI |
+| Inbound | 8443 | TCP | sg-tazama-alb | NiFi UI (HTTPS, Keycloak login) |
 | Inbound | 8000 | TCP | sg-tazama-alb | JupyterHub |
 | Inbound | 7619 | TCP | sg-tazama-alb | Automation Orchestrator |
 | Inbound | 8282 | TCP | sg-tazama-alb | Datalakehouse API (via ALB / tunnel) |
@@ -2380,7 +2390,6 @@ Forwards Server C service ports to `localhost`. Press **Ctrl+C** to close.
 |---|---|
 | `7619` | Automation Orchestrator API |
 | `8000` | JupyterHub |
-| `8088` | NiFi |
 | `8282` | Datalakehouse API |
 | `8983` | Solr |
 | `9998` | Apache Tika |
@@ -2388,6 +2397,8 @@ Forwards Server C service ports to `localhost`. Press **Ctrl+C** to close.
 | `9876` | Ozone SCM (Storage Container Manager) |
 | `9878` | Ozone S3 Gateway |
 | `9888` | Ozone Recon |
+
+NiFi is not tunnelled: it runs in keycloak mode (HTTPS + OIDC login) and is used via `https://nifi.<your-zone>/nifi`. For break-glass access see G.2.
 
 ---
 
@@ -2441,7 +2452,7 @@ Run each in a **separate** terminal window if you want all the tunnels opened, o
 # Terminal 2 - Server B: TCS, TRS, CMS frontends + backends, OpenSearch, pgAdmin (ext)
 .\tunnel-server-b.ps1
 
-# Terminal 3 - Server C: NiFi, Solr, Ozone
+# Terminal 3 - Server C: JupyterHub, Solr, Ozone (NiFi: https://nifi.<your-zone>, see G.2)
 .\tunnel-server-c.ps1
 ```
 
@@ -2486,7 +2497,6 @@ modification. Proceed to Phase F to validate.
 |---|---|
 | 7619 | Automation Orchestrator API |
 | 8000 | JupyterHub |
-| 8088 | NiFi UI |
 | 8282 | Datalakehouse API |
 | 8983 | Solr admin |
 | 9876 | Ozone SCM |
@@ -2559,7 +2569,7 @@ Update your Postman environment: set the base URL variable to
 |---|---|---|
 | Keycloak | `/health/ready` | 200-399 |
 | Hasura | `/healthz` | 200-399 |
-| NiFi | `/nifi-api/system-diagnostics` | 200-399 |
+| NiFi | `/nifi-api/access/config` (HTTPS to :8443 - the only HTTPS target group; no port listener) | 200-399 |
 | JupyterHub | `/hub/health` | 200-399 |
 | All others | `/health` | 200-399 |
 
@@ -2761,8 +2771,8 @@ Invoke-RestMethod "https://tms.$zone/health"
 # Check Keycloak
 Invoke-RestMethod "https://keycloak.$zone/health/ready"
 
-# Check NiFi
-Invoke-RestMethod "https://nifi.$zone/nifi-api/system-diagnostics"
+# Check NiFi (unauthenticated endpoint; the rest of the API needs a Keycloak login)
+Invoke-RestMethod "https://nifi.$zone/nifi-api/access/config"
 ```
 
 All should return `200 OK`.
@@ -2809,7 +2819,7 @@ Then redeploy extensions:
 | `cms.<your-zone>` | CMS Frontend | Server B :5175 |
 | `cms-api.<your-zone>` | CMS Backend API | Server B :3090 |
 | `pgadmin-ext.<your-zone>` | pgAdmin (extensions DB) | Server B :5051 |
-| `nifi.<your-zone>` | NiFi UI | Server C :8088 |
+| `nifi.<your-zone>` | NiFi UI (Keycloak login) | Server C :8443 (HTTPS) |
 | `jupyter.<your-zone>` | JupyterHub (multi-user analytics) | Server C :8000 |
 | `datalakehouse-api.<your-zone>` | Datalakehouse API | Server C :8282 |
 | `automation-orchestrator.<your-zone>` | Automation Orchestrator API | Server C :7619 |
@@ -2984,7 +2994,7 @@ If this returns `000` (connection failure), check two things:
 ```
 
 **Browser/API checks:**
-- NiFi UI: http://localhost:8088/nifi - login with `admin` / `admin123456789`
+- NiFi UI: https://nifi.<your-zone>/nifi - Keycloak login, `NIFI_ADMIN` group (not tunnelled; see G.2)
 - Solr admin: http://localhost:8983/solr
 - Ozone Recon: http://localhost:9888
 - JupyterHub: http://localhost:8000 - see the login note below
@@ -3140,11 +3150,11 @@ The deployment as provisioned out of the box has the following characteristics:
 - All three stacks (`core/`, `extensions/`, `biar/`) were originally committed to a public GitHub repository with plaintext default passwords (`unused`, `password`, `admin123456789`, `tazama`)
 - The `-Password` deploy-script parameter covers PostgreSQL and Keycloak on Servers A and B. All other service credentials (Redis, CouchDB, TRS signing key, Hasura, NiFi, Ozone, OpenSearch, SFTP, pgAdmin, OAuth client secret, relay auth, CMS Flowable) remain at their committed defaults unless changed manually
 - On the current beta deployment, the `-Password` parameter was **not passed at deploy time** - PostgreSQL on both servers has password `unused`
-- NiFi is running over plain HTTP; the single-user login is not enforced
+- NiFi runs in keycloak mode: HTTPS on :8443, Keycloak (OIDC) login, access by `NIFI_ADMIN` group membership. Its secrets come from SSM `/tazama/creds/nifi/*` (see G.2)
 
 **Other open issues**
 - OpenSearch security plugin is disabled (`DISABLE_SECURITY_PLUGIN=true`)
-- NiFi web UI runs over HTTP, bypassing the single-user authenticator
+- The committed test realm still contains test users with published passwords. `deploy-core.ps1` disables `nifi-admin` and `jupyter-user`; the others remain enabled
 - Ozone S3G access key and secret are both `tazama`
 
 ---
@@ -3188,41 +3198,37 @@ Then re-run the deploy scripts with the new password so all service env files ar
 
 ---
 
-#### NiFi - enable HTTPS and enforce login
+#### NiFi - keycloak mode (HTTPS + Keycloak login)
 
-NiFi's single-user authenticator only activates when NiFi is serving over HTTPS. With `NIFI_WEB_HTTP_PORT` set, anyone who reaches port 8088 is in without a password.
+On AWS, NiFi always runs in keycloak mode (`NIFI_AUTH=keycloak`): HTTPS on :8443, login through Keycloak, and access granted to members of the `NIFI_ADMIN` group. The ALB reaches it only through `https://nifi.<your-zone>`; there is no port listener and no tunnel. Keycloak mode **requires the custom domain** (`enable_custom_domain = true`); `deploy-biar.ps1` fails closed without it.
 
-**Step 1 - Update `biar/env/biar-nifi.env`** on Server C:
+**Step 1 - Seed the four SSM parameters** (see A.7): `/tazama/creds/nifi/oidc-client-secret`, `sensitive-props-key` (12+ characters), `keystore-password`, `truststore-password`. Values must not contain `$`, `|`, `&` or `\`. Until these exist, `deploy-biar.ps1` and `Set-ServerEnvOverlays -Server C` stop with an error.
 
-```bash
-# On Server C (via Invoke-RemoteCommand or SSH)
-sed -i 's/NIFI_WEB_HTTP_PORT=.*//' ~/tazama-stack/biar/env/biar-nifi.env
-sed -i 's/NIFI_WEB_HTTP_HOST=.*//' ~/tazama-stack/biar/env/biar-nifi.env
-echo "NIFI_WEB_HTTPS_PORT=8443" >> ~/tazama-stack/biar/env/biar-nifi.env
-echo "NIFI_WEB_HTTPS_HOST=0.0.0.0" >> ~/tazama-stack/biar/env/biar-nifi.env
-```
+**Step 2 - Keycloak realm.** A fresh realm import already contains the client and groups; `deploy-core.ps1` writes the client secret (from SSM) and the public URL into `core/.env`. On an existing realm (import is skipped), add them once with kcadm in the `keycloak` container:
 
-**Step 2 - Update the biar compose file** to expose port 8443 instead of 8088, and update the ALB target group to point to 8443. This requires a `tofu apply` to update the ALB listener rule.
+- confidential client `nifi`, standard flow only, redirect URI `https://nifi.<your-zone>:443/nifi-api/access/oidc/callback`, secret = the SSM `oidc-client-secret` value
+- protocol mapper `realm-roles-userinfo` (realm roles -> `roles` claim in userinfo)
+- realm role `NIFI_ADMIN`
+- group tree `tazama-nifi/NIFI_ADMIN/TAZAMA.ORG` (`NIFI_ADMIN` role mapped on the `NIFI_ADMIN` group; `TENANT_ID=TAZAMA` on the org group)
 
-**Step 3 - Set strong credentials:**
+**Step 3 - Deploy:**
 
 ```powershell
-Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command `
-  "docker exec biar-nifi /opt/nifi/nifi-current/bin/nifi.sh set-single-user-credentials admin '<strong-password>'"
+.\deploy-biar.ps1 -NoPull
 ```
 
-NiFi requires a minimum of 12 characters. Store the password in SSM as `/tazama/nifi_admin_password`.
+**Step 4 - Log in** at `https://nifi.<your-zone>/nifi` with a Keycloak user in an org subgroup of `NIFI_ADMIN`. To add an administrator, add the user to that group; no NiFi change is needed.
 
-**Step 4 - Restart NiFi:**
+**Test users.** `deploy-core.ps1` disables the committed test users `nifi-admin@tazama.org` and `jupyter-user@tazama.org` after every deploy, because their passwords are public.
+
+**Existing sandbox, first apply.** The NiFi target group moves to HTTPS :8443, so plan and apply once with:
 
 ```powershell
-Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command `
-  "cd ~/tazama-stack/biar && docker compose -p tazama-biar \
-   -f ./docker-compose.biar.infrastructure.yaml \
-   -f ./docker-compose.hub.biar.yaml \
-   -f ./docker-compose.utils.init.yaml \
-   restart nifi"
+tofu plan -var-file terraform.tfvars -var-file alb.tfvars -var-file domain.tfvars `
+  -replace='module.dns_public[0].aws_lb_listener_rule.service["nifi"]'
 ```
+
+**Break-glass access.** If Keycloak is unavailable, connect to Server C (EICE) and use NiFi's machine certificate in `/opt/nifi/machine-identity` against `https://localhost:8443/nifi-api`.
 
 ---
 
@@ -3286,7 +3292,7 @@ See A.6. OpenSearch is currently running with `DISABLE_SECURITY_PLUGIN=true`. Th
 | TRS crypto signing key set | ❌ Default | A.7 SSM rollout |
 | Hasura admin secret set | ❌ Default | A.7 SSM rollout |
 | Auth service OAuth client secret set | ❌ Default | A.7 SSM rollout |
-| NiFi HTTPS port on ALB | ❌ HTTP 8088 | G.2 - compose + tofu update |
+| NiFi HTTPS port on ALB | ✅ HTTPS 8443, Keycloak login | G.2 - keycloak mode |
 | pgAdmin passwords rotated | ❌ Default | A.7 SSM rollout |
 | SFTP password rotated | ❌ Default | A.7 - requires compose change first |
 
@@ -3691,7 +3697,7 @@ docker compose -p tazama-core \
 |---|---|---|---|
 | 7619 | Automation Orchestrator API | ALB, Operator | `automation-orchestrator` |
 | 8000 | JupyterHub | ALB | `jupyter` |
-| 8088 | NiFi UI | ALB | `nifi` |
+| 8443 | NiFi UI (HTTPS, Keycloak login) | ALB (`nifi.<domain>` only) | `nifi` |
 | 8282 | Datalakehouse API | ALB, Operator | `datalakehouse-api` |
 | 8983 | Solr UI | Operator (EICE only) | - |
 | 9876 | Ozone SCM | Operator (EICE only) | - |

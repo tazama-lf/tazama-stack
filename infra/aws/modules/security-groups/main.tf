@@ -111,14 +111,8 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Server C service ports
-  ingress {
-    description = "NiFi UI"
-    from_port   = 8088
-    to_port     = 8088
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # Server C service ports: none. NiFi (HTTPS, Keycloak login) is reachable
+  # only via the 443 host rule (nifi.<domain>), never on a public port.
 
   egress {
     description = "All outbound"
@@ -306,9 +300,9 @@ resource "aws_security_group" "server_c" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "NiFi UI"
-    from_port       = 8088
-    to_port         = 8088
+    description     = "NiFi UI (HTTPS, Keycloak login)"
+    from_port       = 8443
+    to_port         = 8443
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }

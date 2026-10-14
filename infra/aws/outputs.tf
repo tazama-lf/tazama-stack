@@ -90,3 +90,8 @@ output "jupyter_public_url" {
   description = "Browser-facing base URL for JupyterHub: https://jupyter.<domain_zone> when custom domain is active. Used for the Keycloak jupyterhub client redirect URI. Empty otherwise (local-dev defaults apply)."
   value       = var.enable_custom_domain ? "https://jupyter.${var.domain_zone}" : ""
 }
+
+output "nifi_public_url" {
+  description = "Browser-facing base URL for the NiFi UI (Keycloak login): https://nifi.<domain_zone> when custom domain is active. Empty otherwise - NiFi then has no ALB path (fail-closed)."
+  value       = var.enable_custom_domain ? "https://nifi.${var.domain_zone}" : ""
+}
