@@ -471,8 +471,8 @@ function Set-BiarServiceEnvOverlay {
         --output text 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $couchPass) {
         Write-Warning "[$ServerLabel] /tazama/creds/couchdb/password not found in SSM - biar-unstructured-pipeline keeps the committed COUCHDB_URL (local default password)."
-    } elseif ($couchPass -match '[@:/?#%]') {
-        throw "[$ServerLabel] /tazama/creds/couchdb/password contains one of the characters @ : / ? # % - not supported in COUCHDB_URL."
+    } elseif ($couchPass -match '[@:/?#%\s\[\]\\]') {
+        throw "[$ServerLabel] /tazama/creds/couchdb/password contains whitespace or one of the characters @ : / ? # % [ ] \ - not supported in COUCHDB_URL."
     } else {
         $couchOverlay = "COUCHDB_URL=http://simon:$($couchPass -replace '\$', '$$$$')@extensions.tazama.internal:5984/cms-evidence"
     }
