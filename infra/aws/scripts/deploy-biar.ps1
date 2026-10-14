@@ -6,10 +6,15 @@
 .DESCRIPTION
     1. Waits for the bootstrap script to complete on Server C.
     2. Copies biar/.env to the server.
-    3. Applies the env overlay (SERVER_A_HOST, SERVER_B_HOST, SERVER_C_HOST -> private DNS).
-    3a. Switches NiFi to keycloak mode with secrets from SSM /tazama/creds/nifi/*
-        (requires the custom domain; stops before any container starts if a
-        parameter is missing).
+    3. Applies the Server C env overlays (Set-ServerEnvOverlays):
+       - biar/.env: SERVER_A_HOST, SERVER_B_HOST, SERVER_C_HOST -> private DNS.
+       - NiFi keycloak mode with secrets from SSM /tazama/creds/nifi/*.
+       - biar-jupyterhub.env: public Keycloak/hub URLs + SSM
+         /tazama/creds/jupyterhub/{oidc-client-secret,crypt_key}.
+       - biar-unstructured-pipeline.env: COUCHDB_URL with SSM
+         /tazama/creds/couchdb/password.
+       Requires the custom domain; stops before any container starts if a NiFi
+       or JupyterHub parameter is missing.
     4. Creates the Tazama warehouse host path if it does not exist.
     5. Starts the biar stack using a staged Ozone startup:
          a. SCM first (Storage Container Manager must initialise before OM)
@@ -57,22 +62,12 @@ Write-Host '[Server C] Ensuring correct repo branch and pulling latest...'
 Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo && git fetch origin $Script:RepoBranch && git checkout $Script:RepoBranch && git reset --hard origin/$Script:RepoBranch"
 Write-Host '[Server C] Repo up to date.' -ForegroundColor Green
 
-# -- 2. Apply .env overlay -----------------------------------------------------
-# Replaces local-dev SERVER_A_HOST, SERVER_B_HOST, and SERVER_C_HOST defaults
-# in biar/.env with the Route 53 private DNS names.
-Write-Host '[Server C] Applying .env overlay...'
-
-$overlayFile   = Join-Path $PSScriptRoot '..\templates\env-biar.tpl'
-$remoteEnvFile = "$Script:RemoteRepo/biar/.env"
-Set-RemoteEnvOverlay -InstanceId $idC -OverlayFile $overlayFile -RemoteEnvFile $remoteEnvFile
-
-Write-Host '[Server C] .env overlay applied.' -ForegroundColor Green
-
-# -- 3. NiFi keycloak mode ------------------------------------------------------
-# Switches biar-nifi to HTTPS + Keycloak login (behind https://nifi.<domain>)
-# with secrets from SSM /tazama/creds/nifi/*. Throws - before anything is
-# (re)started - when the custom domain or any SSM parameter is missing.
-Set-NifiAuthOverlay -InstanceId $idC -TofuOutputs $out -ServerLabel 'Server C'
+# -- 3. Apply env overlays -----------------------------------------------------
+# The same Server C overlay set as deploy-service.ps1 / restart-service.ps1:
+# env-biar.tpl (private DNS names), NiFi keycloak mode, JupyterHub OIDC and
+# the CouchDB URL. Throws - before anything is (re)started - when the custom
+# domain or a required SSM parameter is missing.
+Set-ServerEnvOverlays -Server 'C' -InstanceId $idC -TofuOutputs $out
 
 # -- 4. Create warehouse host path --------------------------------------------
 # automation-orchestrator and datalakehouse-api bind-mount this path.
