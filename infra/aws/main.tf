@@ -101,21 +101,14 @@ module "security_groups" {
   eice_sg_id          = module.vpc.eice_sg_id
 }
 
-# ── AMI lookup: latest Amazon Linux 2023 x86_64 ───────────────────────────────
+# ── AMI lookup: latest standard Amazon Linux 2023 x86_64 ──────────────────────────
+# AWS's published pointer to the standard AL2023 image on the default kernel.
+# A name filter such as "al2023-ami-*-x86_64" also matches the ECS-optimized,
+# Neuron and minimal variants (the minimal image has no SSM agent), so the
+# image picked would depend on which variant AWS published last.
 
-data "aws_ami" "al2023" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
+data "aws_ssm_parameter" "al2023_ami" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
 # ── Bootstrap user_data (identical on all three instances) ────────────────────
@@ -140,7 +133,7 @@ module "server_a" {
   instance_type        = var.instance_type_a
   security_group_ids   = [module.security_groups.server_a_sg_id]
   key_name             = var.key_name
-  ami_id               = data.aws_ami.al2023.id
+  ami_id               = data.aws_ssm_parameter.al2023_ami.insecure_value
   root_volume_size     = 50
   iam_instance_profile = aws_iam_instance_profile.ec2_ssm.name
   user_data            = local.bootstrap
@@ -157,7 +150,7 @@ module "server_b" {
   instance_type        = var.instance_type_b
   security_group_ids   = [module.security_groups.server_b_sg_id]
   key_name             = var.key_name
-  ami_id               = data.aws_ami.al2023.id
+  ami_id               = data.aws_ssm_parameter.al2023_ami.insecure_value
   root_volume_size     = 50
   iam_instance_profile = aws_iam_instance_profile.ec2_ssm.name
   user_data            = local.bootstrap
@@ -174,7 +167,7 @@ module "server_c" {
   instance_type        = var.instance_type_c
   security_group_ids   = [module.security_groups.server_c_sg_id]
   key_name             = var.key_name
-  ami_id               = data.aws_ami.al2023.id
+  ami_id               = data.aws_ssm_parameter.al2023_ami.insecure_value
   root_volume_size     = 150
   iam_instance_profile = aws_iam_instance_profile.ec2_ssm.name
   user_data            = local.bootstrap

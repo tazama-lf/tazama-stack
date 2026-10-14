@@ -1018,18 +1018,15 @@ aws ec2 describe-instance-type-offerings `
 **Confirm Amazon Linux 2023 AMI ID:**
 
 ```powershell
-aws ec2 describe-images `
-  --owners amazon `
-  --filters `
-    "Name=name,Values=al2023-ami-*-x86_64" `
-    "Name=state,Values=available" `
-  --query "sort_by(Images, &CreationDate)[-1].{ID:ImageId,Name:Name,Date:CreationDate}" `
+aws ssm get-parameter `
+  --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 `
+  --query "Parameter.Value" `
   --region ap-south-1 `
   --profile tazama `
-  --output table
+  --output text
 ```
 
-> Record the AMI ID - it goes into `terraform.tfvars` in Phase C.
+> This is the image OpenTofu uses for new instances. No `terraform.tfvars` entry is needed - `main.tf` reads the same parameter.
 
 **Actual outputs:**
 
@@ -1059,7 +1056,7 @@ anything is created.
 | Server C (biar) | `10.0.1.30` . `r5.2xlarge` . 100 GB gp3 |
 | DNS | Route 53 private zone `tazama.internal` |
 | ALB | Optional - see Phase E |
-| AMI | Amazon Linux 2023 (fetched dynamically - always latest) |
+| AMI | Amazon Linux 2023, standard image (AWS SSM public parameter - always latest) |
 
 ---
 
@@ -1326,8 +1323,11 @@ Files created:
   supplied via `backend.conf` at `tofu init` time (keeps account IDs out of
   committed HCL).
 - IAM role + instance profile defined here (shared by all three instances).
-- `data "aws_ami" "al2023"` fetches the newest Amazon Linux 2023 x86_64 image
-  dynamically - no AMI ID to manually update.
+- `data "aws_ssm_parameter" "al2023_ami"` reads AWS's published pointer to the
+  newest standard Amazon Linux 2023 x86_64 image
+  (`/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64`) -
+  no AMI ID to manually update. A name filter is not used: `al2023-ami-*-x86_64`
+  also matches the ECS-optimized, Neuron and minimal variants.
 - `locals { bootstrap = templatefile(...) }` renders the bootstrap script once and
   passes the same rendered string to all three `module "server_*"` calls.
 
