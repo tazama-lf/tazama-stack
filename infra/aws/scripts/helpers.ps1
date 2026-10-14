@@ -204,7 +204,10 @@ function Set-RemoteEnvOverlay {
         "sed -i 's`u{1}^${key}=.*`u{1}${key}=${vSed}`u{1}' ${RemoteEnvFile}; " +
         "else printf '%s\n' '${key}=${vEsc}' >> ${RemoteEnvFile}; fi"
     }
-    $batchCmd = $bashLines -join '; '
+    # Several committed env files have no trailing newline; without this guard
+    # the first appended key would be glued onto the file's last line.
+    $newlineGuard = "if [ -s ${RemoteEnvFile} ] && [ -n `"`$(tail -c1 ${RemoteEnvFile})`" ]; then echo >> ${RemoteEnvFile}; fi"
+    $batchCmd = (@($newlineGuard) + $bashLines) -join '; '
     Invoke-RemoteCommand $InstanceId $batchCmd
 }
 
