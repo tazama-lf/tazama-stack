@@ -45,7 +45,7 @@ locals {
     voila        = { port = 18866, server = "b" }
     pgadmin-ext  = { port = 5051,  server = "b" }
     couchdb      = { port = 5984,  server = "b" }
-    nifi                    = { port = 8088, server = "c" }
+    nifi                    = { port = 8443, server = "c" }
     jupyterhub              = { port = 8000, server = "c" }
     auto-orchestrator       = { port = 7619, server = "c" }
     datalakehouse-api       = { port = 8282, server = "c" }
@@ -61,7 +61,7 @@ locals {
   # CMS and TRS/TCS APIs (NestJS) have no /health route; Swagger UI at /api/docs returns 200.
   health_check_paths = {
     keycloak    = "/health/ready"
-    nifi        = "/nifi-api/system-diagnostics"
+    nifi        = "/nifi-api/access/config"
     hasura      = "/healthz"
     pgadmin     = "/"
     pgadmin-ext = "/"
@@ -79,6 +79,13 @@ locals {
   # affinity so polling/websocket handshakes keep hitting the same target
   # if the service is ever scaled beyond one instance.
   sticky_services = ["demo"]
+
+  # Services whose container terminates TLS itself (self-signed cert). The ALB
+  # talks HTTPS to them (it does not validate backend certificates), and they
+  # get no port-based HTTP listener - only the 443 host rule (dns-public).
+  # NiFi in keycloak mode refuses plain HTTP and requires an authenticated
+  # login, so a public port listener would be both broken and pointless.
+  tls_backends = ["nifi"]
 }
 
 resource "aws_lb_target_group" "services" {
@@ -86,13 +93,13 @@ resource "aws_lb_target_group" "services" {
 
   name        = "${var.prefix}-tg-${each.key}"
   port        = each.value.port
-  protocol    = "HTTP"
+  protocol    = contains(local.tls_backends, each.key) ? "HTTPS" : "HTTP"
   vpc_id      = var.vpc_id
   target_type = "instance"
 
   health_check {
     enabled             = true
-    protocol            = "HTTP"
+    protocol            = contains(local.tls_backends, each.key) ? "HTTPS" : "HTTP"
     port                = "traffic-port"
     path                = lookup(local.health_check_paths, each.key, "/health")
     interval            = 30
@@ -126,9 +133,10 @@ resource "aws_lb_target_group_attachment" "services" {
 # Each service is reachable at http://<alb-dns>:<port>
 # No host-based or path-based rules are needed — there is exactly one target
 # group per listener, so the default action covers 100% of traffic.
+# TLS backends (local.tls_backends) are excluded: reachable via 443 host rule only.
 
 resource "aws_lb_listener" "services" {
-  for_each = local.services
+  for_each = { for k, v in local.services : k => v if !contains(local.tls_backends, k) }
 
   load_balancer_arn = aws_lb.main.arn
   port              = each.value.port

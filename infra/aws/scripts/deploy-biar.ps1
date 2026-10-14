@@ -7,6 +7,9 @@
     1. Waits for the bootstrap script to complete on Server C.
     2. Copies biar/.env to the server.
     3. Applies the env overlay (SERVER_A_HOST, SERVER_B_HOST, SERVER_C_HOST -> private DNS).
+    3a. Switches NiFi to keycloak mode with secrets from SSM /tazama/creds/nifi/*
+        (requires the custom domain; stops before any container starts if a
+        parameter is missing).
     4. Creates the Tazama warehouse host path if it does not exist.
     5. Starts the biar stack using a staged Ozone startup:
          a. SCM first (Storage Container Manager must initialise before OM)
@@ -65,6 +68,12 @@ Set-RemoteEnvOverlay -InstanceId $idC -OverlayFile $overlayFile -RemoteEnvFile $
 
 Write-Host '[Server C] .env overlay applied.' -ForegroundColor Green
 
+# -- 3. NiFi keycloak mode ------------------------------------------------------
+# Switches biar-nifi to HTTPS + Keycloak login (behind https://nifi.<domain>)
+# with secrets from SSM /tazama/creds/nifi/*. Throws - before anything is
+# (re)started - when the custom domain or any SSM parameter is missing.
+Set-NifiAuthOverlay -InstanceId $idC -TofuOutputs $out -ServerLabel 'Server C'
+
 # -- 4. Create warehouse host path --------------------------------------------
 # automation-orchestrator and datalakehouse-api bind-mount this path.
 # Docker will fail to start the containers if the directory does not exist.
@@ -112,7 +121,7 @@ Write-Host ''
 Write-Host '[Server C] tazama-biar is up.' -ForegroundColor Green
 Write-Host ''
 Write-Host 'Verify services:'
-Write-Host "  NiFi UI              http://$($out.ServerC_PrivateIp):8088/nifi"
+Write-Host "  NiFi UI              $($out.NifiPublicUrl)/nifi (Keycloak login, NIFI_ADMIN group)"
 Write-Host "  Solr UI              http://$($out.ServerC_PrivateIp):8983/solr"
 Write-Host "  Ozone Recon UI       http://$($out.ServerC_PrivateIp):9888"
 Write-Host "  Automation Orch API  http://$($out.ServerC_PrivateIp):7619/docs"

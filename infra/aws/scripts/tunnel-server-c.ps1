@@ -29,7 +29,6 @@ Write-Host ''
 Write-Host 'Forwarded ports (localhost -> Server C):'
 Write-Host '  7619  -> Automation Orchestrator API'
 Write-Host '  8000  -> JupyterHub'
-Write-Host '  8088  -> NiFi'
 Write-Host '  8282  -> Datalakehouse API'
 Write-Host '  8983  -> Solr'
 Write-Host '  9998  -> Apache Tika'
@@ -37,6 +36,9 @@ Write-Host '  9874  -> Ozone OM (Object Manager)'
 Write-Host '  9876  -> Ozone SCM (Storage Container Manager)'
 Write-Host '  9878  -> Ozone S3 Gateway'
 Write-Host '  9888  -> Ozone Recon'
+Write-Host ''
+Write-Host 'NiFi is not tunnelled: use https://nifi.<domain>/nifi (Keycloak login).'
+Write-Host 'Break-glass: SSH to Server C and use the NiFi machine certificate (see aws-deployment-instructions.md).'
 Write-Host ''
 Write-Host 'Press Ctrl+C to close all tunnels.' -ForegroundColor Yellow
 Write-Host ''
@@ -60,7 +62,6 @@ try {
     ssh -q -N `
         -L 7619:localhost:7619 `
         -L 8000:localhost:8000 `
-        -L 8088:localhost:8088 `
         -L 8282:localhost:8282 `
         -L 8983:localhost:8983 `
         -L 9998:localhost:9998 `

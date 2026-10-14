@@ -7,6 +7,8 @@
     1. Reads instance IDs from tofu outputs.
     2. Waits for the bootstrap script to complete on Server A.
     3. Starts the tazama-core Docker Compose stack (hub images).
+    4. Disables the committed test-realm users that grant NiFi / JupyterHub
+       access (nifi-admin@tazama.org, jupyter-user@tazama.org) via kcadm.
 
     Run from infra/aws/scripts/ or anywhere - paths are resolved relative
     to this script's location.
@@ -158,5 +160,35 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
 
 Write-Host ''
 Write-Host '[Server A] tazama-core is up.' -ForegroundColor Green
+
+# -- 5. Disable committed test users in the Keycloak realm --------------------
+# The realm JSON copied in step 4 is the repo's TEST realm. Some of its users
+# have committed passwords and grant access that must not be publicly
+# reachable on AWS (nifi-admin: NiFi admin incl. ExecuteProcess on Server C;
+# jupyter-user: notebook access). Disable them after import. Idempotent; a
+# user that does not exist (realm imported before it was added) is skipped.
+# Runs kcadm inside the keycloak container with the container's own
+# KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD, so no password crosses SSH. Fails
+# the deploy (non-zero exit) if Keycloak never accepts the admin login or any
+# kcadm call fails, so the exposure cannot pass silently.
+Write-Host '[Server A] Disabling committed test users in the Keycloak realm...'
+$disableTestUsers = @'
+kc=/opt/keycloak/bin/kcadm.sh; ok=0
+for i in $(seq 1 36); do
+  $kc config credentials --server http://localhost:8080 --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 && { ok=1; break; }
+  sleep 5
+done
+[ "$ok" = 1 ] || { echo "Keycloak admin login failed after 3 minutes"; exit 1; }
+for u in nifi-admin@tazama.org jupyter-user@tazama.org; do
+  id=$($kc get users -r tazama -q exact=true -q username="$u" --fields id --format csv --noquotes) || exit 1
+  if [ -z "$id" ]; then echo "$u: not present"; continue; fi
+  $kc update "users/$id" -r tazama -s enabled=false || exit 1
+  echo "$u: disabled"
+done
+'@ -replace "`r", ''
+$disableB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($disableTestUsers))
+Invoke-RemoteCommand -InstanceId $idA -Command "echo $disableB64 | base64 -d | docker exec -i keycloak bash -s"
+Write-Host '[Server A] Test users disabled.' -ForegroundColor Green
+
 Write-Host ''
 Write-Host 'Next step: .\deploy-extensions.ps1'
