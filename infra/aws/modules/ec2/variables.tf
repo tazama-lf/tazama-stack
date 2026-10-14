@@ -36,7 +36,7 @@ variable "key_name" {
 }
 
 variable "ami_id" {
-  description = "AMI ID (passed from data.aws_ami.al2023 in root module)"
+  description = "AMI ID (passed from data.aws_ssm_parameter.al2023_ami in root module)"
   type        = string
 }
 
