@@ -4,9 +4,22 @@
 cd "$(dirname "$0")"
 
 BIAR_PROJECT="tazama-biar"
+# Every compose call that reads compose files loads the secrets (README.md, section 6)
+COMPOSE="docker compose --env-file .env --env-file secrets.env"
 
 pause() {
     read -rp " Press Enter to continue..."
+}
+
+require_secrets() {
+    if [[ ! -f secrets.env ]]; then
+        echo ""
+        echo " ERROR: secrets.env not found in $(pwd)."
+        echo "        Copy secrets.env.template to secrets.env and fill it in (README.md, section 6)."
+        echo ""
+        pause
+        return 1
+    fi
 }
 
 env_value() {
@@ -76,7 +89,7 @@ deploy_biar_hub() {
     echo ""
     echo " Deploying BIAR stack (DockerHub images)..."
     echo ""
-    docker compose -p "$BIAR_PROJECT" \
+    $COMPOSE -p "$BIAR_PROJECT" \
         -f ./docker-compose.biar.infrastructure.yaml \
         -f ./docker-compose.hub.biar.yaml \
         -f ./docker-compose.utils.init.yaml \
@@ -91,7 +104,7 @@ deploy_biar_dev() {
     echo ""
     echo " Deploying BIAR stack (GitHub builds)..."
     echo ""
-    docker compose -p "$BIAR_PROJECT" \
+    $COMPOSE -p "$BIAR_PROJECT" \
         -f ./docker-compose.biar.infrastructure.yaml \
         -f ./docker-compose.dev.biar.yaml \
         -f ./docker-compose.utils.init.yaml \
@@ -103,10 +116,11 @@ deploy_biar_dev() {
 }
 
 down_biar() {
+    require_secrets || return 1
     echo ""
     echo " Tearing down BIAR stack..."
     echo ""
-    docker compose -p "$BIAR_PROJECT" \
+    $COMPOSE -p "$BIAR_PROJECT" \
         -f ./docker-compose.biar.infrastructure.yaml \
         -f ./docker-compose.hub.biar.yaml \
         -f ./docker-compose.dev.biar.yaml \
@@ -149,14 +163,22 @@ menu() {
         echo "   1. Deploy BIAR stack (DockerHub images)"
         echo "   2. Deploy BIAR stack (GitHub builds)"
         echo "   3. Utilities / teardown"
+        echo "   4. Audit secrets"
         echo ""
-        read -rp " Select option (1-3), or (q)uit: " choice
+        read -rp " Select option (1-4), or (q)uit: " choice
 
         case "$choice" in
             q|Q) exit 0 ;;
-            1) check_core_reachable && deploy_biar_hub ;;
-            2) check_core_reachable && deploy_biar_dev ;;
+            1) require_secrets && check_core_reachable && deploy_biar_hub ;;
+            2) require_secrets && check_core_reachable && deploy_biar_dev ;;
             3) utils ;;
+            4)
+                clear
+                echo ""
+                bash ../utils/audit-secrets.sh "$(pwd)"
+                echo ""
+                pause
+                ;;
         esac
     done
 }

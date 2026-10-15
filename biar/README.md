@@ -30,6 +30,7 @@
   - [9.3. Docker Compose YAML structure](#93-docker-compose-yaml-structure)
   - [9.4. JupyterHub Keycloak login: defaults, changes and maintenance](#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance)
   - [9.5. NiFi authentication modes](#95-nifi-authentication-modes)
+  - [9.6. Original default values](#96-original-default-values)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -98,6 +99,14 @@ SERVER_B_HOST=10.0.1.20
 
 # 4. INSTALLATION STEPS
 
+Before the first deployment, create `biar/secrets.env` from the template and fill in every `[required]` key. The file is gitignored. See [root README section 6](../README.md#6-secrets) for the rules and the keys that must match `core/secrets.env` and `extensions/secrets.env`; the public test values the stack used before are listed in [Section 9.6](#96-original-default-values).
+
+```powershell
+Copy-Item secrets.env.template secrets.env
+```
+
+The launcher stops with an error if `secrets.env` is missing.
+
 Navigate to the `biar/` folder and run the launcher:
 
 **Windows**
@@ -125,9 +134,12 @@ The launcher presents the following menu:
    1. Deploy BIAR stack (DockerHub images)
    2. Deploy BIAR stack (GitHub builds)
    3. Utilities / teardown
+   4. Audit secrets
 
-Select option (1-3), or (q)uit:
+Select option (1-4), or (q)uit:
 ```
+
+Option 4 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys. See [root README section 6.6](../README.md#66-checking-your-setup).
 
 ## 4.1. Deploy BIAR stack
 
@@ -141,7 +153,7 @@ Options 1 and 2 run a pre-flight connectivity check to verify that `SERVER_A_HOS
 **Compose chain used (DockerHub images):**
 
 ```
-docker compose -p tazama-biar \
+docker compose --env-file .env --env-file secrets.env -p tazama-biar \
   -f ./docker-compose.biar.infrastructure.yaml \
   -f ./docker-compose.hub.biar.yaml \
   -f ./docker-compose.utils.init.yaml \
@@ -318,12 +330,12 @@ All notebooks read Spark configuration from environment variables. The key varia
 | Variable | Default | Description |
 |---|---|---|
 | `S3A_ENDPOINT` | `http://ozone-s3g:9878` | Ozone S3G endpoint for Spark S3A reads |
-| `S3A_ACCESS_KEY` | `tazama` | Ozone S3 access key |
-| `S3A_SECRET_KEY` | `tazama` | Ozone S3 secret key |
+| `S3A_ACCESS_KEY` | `TAZAMA_S3_ACCESS_KEY` from `biar/secrets.env` | Ozone S3 access key |
+| `S3A_SECRET_KEY` | `TAZAMA_S3_SECRET_KEY` from `biar/secrets.env` | Ozone S3 secret key |
 | `WAREHOUSE_ROOT` | `/opt/Tazama_Warehouse` | Path to the Hudi warehouse root inside the container |
 | `SPARK_DRIVER_MEMORY` | `4g` | Heap memory per user Spark session |
 
-These defaults match the values in `biar/env/biar-jupyterhub.env` and the Ozone credentials in `biar/.env`. Override them in `biar-jupyterhub.env` before deploying if your Ozone is configured differently.
+These values are set in `biar/env/biar-jupyterhub.env`; the S3 keys come from `biar/secrets.env`. Change them there before deploying if your Ozone is configured differently.
 
 > [!NOTE]
 > Each user's Spark session starts a JVM on first notebook execution. Expect a 20–30 second delay before the first cell produces output. Subsequent cells in the same session run much faster.
@@ -363,12 +375,12 @@ docker logs biar-nifi
 
 If you see `OutOfMemoryError`, increase Docker Desktop's memory allocation. NiFi is configured with 512 MB initial and 1 GB maximum heap by default.
 
-If the log ends with `NIFI_AUTH=keycloak requires: ...`, set the listed variables in `biar/.env` (see [9.5](#95-nifi-authentication-modes)) and deploy again.
+If the log ends with `NIFI_AUTH=keycloak requires: ...`, set the listed variables in `biar/secrets.env` (see [9.5](#95-nifi-authentication-modes)) and deploy again.
 
 To start again from a clean NiFi state, stop the stack and remove its volumes before redeploying. This deletes the NiFi flow and all other BIAR data:
 
 ```
-docker compose -p tazama-biar -f ./docker-compose.biar.infrastructure.yaml down --volumes
+docker compose --env-file .env --env-file secrets.env -p tazama-biar -f ./docker-compose.biar.infrastructure.yaml down --volumes
 ```
 
 ### Ozone SCM or OM does not start
@@ -412,7 +424,7 @@ The `ozone-aws-cli` container automatically creates the `tazama` bucket each tim
 docker exec ozone-aws-cli aws --endpoint-url http://ozone-s3g:9878 s3 ls
 ```
 
-The Ozone S3G access key is `tazama` and secret key is `tazama` in the default configuration (set via `S3A_ACCESS_KEY` and `S3A_SECRET_KEY` in `biar/.env`). These are committed defaults appropriate for a local development deployment only.
+The Ozone S3G access key and secret key are `TAZAMA_S3_ACCESS_KEY` and `TAZAMA_S3_SECRET_KEY` in `biar/secrets.env`. Ozone in this stack runs without security enabled, so S3G does not check them; the services send them because the S3 clients require a key pair.
 
 ## 9.3. Docker Compose YAML structure
 
@@ -432,11 +444,11 @@ View [docker-yaml-structure.md](./docker-yaml-structure.md) for additional detai
 By default (`JUPYTERHUB_AUTH=keycloak`), JupyterHub logs users in through the `jupyterhub` client of the Keycloak `tazama` realm, which is part of the core stack. The core stack must therefore be running with the Authentication services. The realm side (client, roles, groups and test user) is described in [Keycloak realm defaults and the JupyterHub client](../core/README.md#keycloak-realm-defaults-and-the-jupyterhub-client) in the core README.
 
 > [!WARNING]
-> The defaults below are public test values committed to git. Change them on any deployment that is reachable by anyone other than you.
+> The original default values listed in [9.6](#96-original-default-values) are public. Do not use them on any deployment that is reachable by anyone other than you.
 
 ### Defaults
 
-The hub settings are in [`env/biar-jupyterhub.env`](./env/biar-jupyterhub.env):
+The hub settings are in [`env/biar-jupyterhub.env`](./env/biar-jupyterhub.env); the two secrets come from `biar/secrets.env`:
 
 | Variable | Default | Must match |
 |---|---|---|
@@ -444,12 +456,12 @@ The hub settings are in [`env/biar-jupyterhub.env`](./env/biar-jupyterhub.env):
 | `KEYCLOAK_ISSUER_URL` | `http://localhost:8080/realms/tazama` | The Keycloak URL and realm |
 | `JUPYTERHUB_PUBLIC_URL` | `http://localhost:8000` | `JUPYTERHUB_PUBLIC_URL` of the Keycloak container (the client's redirect URI is `<url>/hub/oauth_callback`) |
 | `KEYCLOAK_CLIENT_ID` | `jupyterhub` | The client ID in the realm |
-| `KEYCLOAK_CLIENT_SECRET` | `jupyterhub-test-secret` | `JUPYTERHUB_OIDC_CLIENT_SECRET` of the Keycloak container |
-| `JUPYTERHUB_CRYPT_KEY` | `changeme` (placeholder) | - |
+| `KEYCLOAK_CLIENT_SECRET` | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` from `biar/secrets.env` | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` in `core/secrets.env` |
+| `JUPYTERHUB_CRYPT_KEY` | `TAZAMA_JUPYTERHUB_CRYPT_KEY` from `biar/secrets.env` | - |
 
-The committed defaults on the hub side and the realm side match each other, so no change is needed to log in with the defaults.
+The other hub-side and realm-side defaults match each other. The client secret matches when `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` has the same value in `biar/secrets.env` and `core/secrets.env`.
 
-`JUPYTERHUB_CRYPT_KEY` encrypts the stored login state and is required in Keycloak mode. JupyterHub only accepts a 32-byte key in hex or base64, so replace the placeholder with a generated key:
+`JUPYTERHUB_CRYPT_KEY` encrypts the stored login state and is required in Keycloak mode. JupyterHub only accepts a 32-byte key in hex or base64, so generate it with:
 
 ```
 openssl rand -hex 32
@@ -473,23 +485,23 @@ JupyterHub user names are the Keycloak `preferred_username` (email style). Home 
 
 ### Changing the defaults
 
-| To change | Hub side (`env/biar-jupyterhub.env`) | Keycloak side |
+| To change | Hub side | Keycloak side |
 |---|---|---|
-| Public hub URL | `JUPYTERHUB_PUBLIC_URL` | `JUPYTERHUB_PUBLIC_URL` in `core/.env` before the realm import, or the client's redirect URI, web origin and post-logout redirect in the running realm |
-| Client secret | `KEYCLOAK_CLIENT_SECRET` | `JUPYTERHUB_OIDC_CLIENT_SECRET` in `core/.env` before the realm import, or **Clients > jupyterhub > Credentials** in the running realm |
-| Keycloak address | `KEYCLOAK_ISSUER_URL` | - |
-| Encryption key | `JUPYTERHUB_CRYPT_KEY` | - |
+| Public hub URL | `JUPYTERHUB_PUBLIC_URL` in `env/biar-jupyterhub.env` | `JUPYTERHUB_PUBLIC_URL` in `core/.env` before the realm import, or the client's redirect URI, web origin and post-logout redirect in the running realm |
+| Client secret | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` in `biar/secrets.env` | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` in `core/secrets.env` before the realm import, or **Clients > jupyterhub > Credentials** in the running realm |
+| Keycloak address | `KEYCLOAK_ISSUER_URL` in `env/biar-jupyterhub.env` | - |
+| Encryption key | `TAZAMA_JUPYTERHUB_CRYPT_KEY` in `biar/secrets.env` | - |
 
 After changing the hub side, recreate the container to load the new values:
 
 ```
-docker compose -p tazama-biar -f docker-compose.biar.infrastructure.yaml -f docker-compose.hub.biar.yaml up -d --force-recreate biar-jupyterhub
+docker compose --env-file .env --env-file secrets.env -p tazama-biar -f docker-compose.biar.infrastructure.yaml -f docker-compose.hub.biar.yaml up -d --force-recreate biar-jupyterhub
 ```
 
-Keycloak reads `core/.env` only when the realm is first imported. See the core README for how to change a running realm or force a reimport.
+Keycloak reads `core/.env` and `core/secrets.env` only when the realm is first imported. See the core README for how to change a running realm or force a reimport.
 
 > [!IMPORTANT]
-> Do not commit real secrets to `env/biar-jupyterhub.env`. Supply them at deploy time from a secret store. On the AWS deployment the client secret is in SSM at `/tazama/creds/jupyterhub/oidc-client-secret` and the encryption key at `/tazama/creds/jupyterhub/crypt_key`.
+> Never commit `biar/secrets.env`. On the AWS deployment the deploy scripts write it from SSM: the client secret is at `/tazama/creds/jupyterhub/oidc-client-secret` and the encryption key at `/tazama/creds/jupyterhub/crypt_key`.
 
 ## 9.5. NiFi authentication modes
 
@@ -506,7 +518,7 @@ Keycloak reads `core/.env` only when the realm is first imported. See the core R
 ### Using keycloak mode locally
 
 1. Start the core stack with the Authentication services. The `nifi` client, role, group and test user are in the realm file (see [Keycloak realm defaults](../core/README.md#nifi-objects) in the core README). A Keycloak container whose realm was imported before they were added does not have them: remove the container to reimport the realm, as described in the core README.
-2. In `biar/.env`, set `NIFI_AUTH=keycloak` and fill in the three empty secrets. NiFi refuses to start until they are set. Generate each value with:
+2. In `biar/.env`, set `NIFI_AUTH=keycloak`. In `biar/secrets.env`, fill in `TAZAMA_NIFI_OIDC_CLIENT_SECRET` (same value as in `core/secrets.env`) and the three NiFi keys `TAZAMA_NIFI_SENSITIVE_PROPS_KEY`, `TAZAMA_NIFI_KEYSTORE_PASSWORD` and `TAZAMA_NIFI_TRUSTSTORE_PASSWORD`. NiFi refuses to start until they are set. Generate each of the three NiFi keys with:
 
    ```
    openssl rand -hex 16
@@ -523,7 +535,7 @@ An existing installation keeps its flow, including the stored passwords, when it
 
 ### Variables
 
-All variables are in `biar/.env`; those marked "compose default" are not listed there but can be added.
+The mode variables are in `biar/.env`; those marked "compose default" are not listed there but can be added. The `TAZAMA_NIFI_*` secrets are in `biar/secrets.env`.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -535,7 +547,7 @@ All variables are in `biar/.env`; those marked "compose default" are not listed 
 | `NIFI_WEB_PROXY_HOST` | `localhost:8443` | Comma-separated `host:port` list that browsers use to reach NiFi. NiFi rejects requests for other host names. |
 | `NIFI_KEYCLOAK_ISSUER_URL` | `http://host.docker.internal:8080/realms/tazama` | Keycloak realm address, as seen from the NiFi container |
 | `NIFI_KEYCLOAK_CLIENT_ID` | `nifi` (compose default) | Keycloak client ID |
-| `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `nifi-test-secret` | Client secret. Must match `TAZAMA_NIFI_OIDC_CLIENT_SECRET` of the Keycloak container. |
+| `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | (empty) | Client secret. Must match `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `core/secrets.env`. |
 | `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` | (empty) | Encrypts the passwords stored in the flow. At least 12 characters. |
 | `TAZAMA_NIFI_KEYSTORE_PASSWORD` | (empty) | Password of NiFi's server keystore |
 | `TAZAMA_NIFI_TRUSTSTORE_PASSWORD` | (empty) | Password of NiFi's truststore |
@@ -554,19 +566,40 @@ In `keycloak` mode, NiFi writes a client certificate for automation (`CN=tazama-
 
 ### Changing the defaults
 
-| To change | NiFi side (`biar/.env`) | Keycloak side |
+| To change | NiFi side | Keycloak side |
 |---|---|---|
-| Public NiFi address | `NIFI_WEB_PROXY_HOST` | `NIFI_PUBLIC_URL` in `core/.env` before the realm import, or the redirect URI and post-logout redirect of **Clients > nifi** in the running realm |
-| Client secret | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `core/.env` before the realm import, or **Clients > nifi > Credentials** in the running realm |
-| Keycloak address | `NIFI_KEYCLOAK_ISSUER_URL` | - |
+| Public NiFi address | `NIFI_WEB_PROXY_HOST` in `biar/.env` | `NIFI_PUBLIC_URL` in `core/.env` before the realm import, or the redirect URI and post-logout redirect of **Clients > nifi** in the running realm |
+| Client secret | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `biar/secrets.env` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `core/secrets.env` before the realm import, or **Clients > nifi > Credentials** in the running realm |
+| Keycloak address | `NIFI_KEYCLOAK_ISSUER_URL` in `biar/.env` | - |
 
 After changing the NiFi side, recreate the container to load the new values:
 
 ```
-docker compose -p tazama-biar -f docker-compose.biar.infrastructure.yaml -f docker-compose.hub.biar.yaml -f docker-compose.utils.init.yaml up -d --force-recreate biar-nifi biar-nifi-init
+docker compose --env-file .env --env-file secrets.env -p tazama-biar -f docker-compose.biar.infrastructure.yaml -f docker-compose.hub.biar.yaml -f docker-compose.utils.init.yaml up -d --force-recreate biar-nifi biar-nifi-init
 ```
 
 > [!IMPORTANT]
-> Do not commit real secrets to `biar/.env`. Supply them at deploy time from a secret store.
+> Never commit `biar/secrets.env`. On the AWS deployment the deploy scripts write it from SSM.
+
+<div style="text-align: right"><a href="#top">Top</a></div>
+
+## 9.6. Original default values
+
+Before `secrets.env` existed, these values were committed in the compose and env files. They are public, so use them for local development only and never on a reachable server. Keys marked MUST MATCH in the template need the same value in `core/secrets.env` or `extensions/secrets.env` (see [root README section 6.2](../README.md#62-values-shared-between-stacks)).
+
+| Key | Original default | Used by |
+|---|---|---|
+| `TAZAMA_S3_ACCESS_KEY` | `tazama` | automation-orchestrator, JupyterHub, ozone-aws-cli, NiFi flow (set by biar-nifi-init) |
+| `TAZAMA_S3_SECRET_KEY` | `tazama` | same as above |
+| `TAZAMA_CORE_PG_PASSWORD` | `unused` | NiFi flow, core PostgreSQL connections (set by biar-nifi-init) |
+| `TAZAMA_EXT_PG_PASSWORD` | `unused` | NiFi flow, extensions PostgreSQL connections (set by biar-nifi-init) |
+| `TAZAMA_COUCHDB_USERNAME` | `simon` | unstructured pipeline |
+| `TAZAMA_COUCHDB_PASSWORD` | `1234` | unstructured pipeline |
+| `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` | `jupyterhub-test-secret` | JupyterHub |
+| `TAZAMA_JUPYTERHUB_CRYPT_KEY` | `changeme` (placeholder, not accepted by JupyterHub - generate: `openssl rand -hex 32`) | JupyterHub |
+| `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `nifi-test-secret` | NiFi (`keycloak` mode) |
+| `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` | (empty - generate: `openssl rand -hex 16`) | NiFi (`keycloak` mode) |
+| `TAZAMA_NIFI_KEYSTORE_PASSWORD` | (empty - generate: `openssl rand -hex 16`) | NiFi (`keycloak` mode) |
+| `TAZAMA_NIFI_TRUSTSTORE_PASSWORD` | (empty - generate: `openssl rand -hex 16`) | NiFi (`keycloak` mode) |
 
 <div style="text-align: right"><a href="#top">Top</a></div>

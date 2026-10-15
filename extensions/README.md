@@ -21,6 +21,7 @@
 - [8. APPENDIX](#8-appendix)
   - [8.1. Authentication public key](#81-authentication-public-key)
   - [8.2. Docker Compose YAML structure](#82-docker-compose-yaml-structure)
+  - [8.3. Original default values](#83-original-default-values)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -87,6 +88,14 @@ On a single machine, Server A and Server B are both `localhost`. Run the pre-fli
 
 # 4. INSTALLATION STEPS
 
+Before the first deployment, create `extensions/secrets.env` from the template and fill in every `[required]` key (on Server A as well: DEMS and DEAPI read it). The file is gitignored. See [root README section 6](../README.md#6-secrets) for the rules and the keys that must match `core/secrets.env` and `biar/secrets.env`; the public test values the stack used before are listed in [Section 8.3](#83-original-default-values).
+
+```powershell
+Copy-Item secrets.env.template secrets.env
+```
+
+The launcher stops with an error if `secrets.env` is missing.
+
 Navigate to the `extensions/` folder and run the launcher:
 
 **Windows**
@@ -118,9 +127,12 @@ The launcher presents the following menu:
    4. Deploy extensions    (DockerHub images)
 
    5. Utilities / teardown
+   6. Audit secrets
 
-Select option (1-5), or (q)uit:
+Select option (1-6), or (q)uit:
 ```
+
+Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD` and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). See [root README section 6.6](../README.md#66-checking-your-setup).
 
 ## 4.1. Server A pre-flight: DEMS and DEAPI
 
@@ -135,12 +147,12 @@ Options 1 and 2 deploy DEMS and DEAPI onto the running `tazama-core` Compose pro
 
 GitHub builds:
 ```
-docker compose -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml up -d
+docker compose --env-file .env --env-file secrets.env -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml up -d
 ```
 
 DockerHub images:
 ```
-docker compose -p tazama-core -f ./docker-compose.hub.extensions.apis.yaml up -d
+docker compose --env-file .env --env-file secrets.env -p tazama-core -f ./docker-compose.hub.extensions.apis.yaml up -d
 ```
 
 Both files deploy:
@@ -167,7 +179,7 @@ The launcher also automatically copies `../core/auth/test-public-key.pem` into `
 **Compose chain used (GitHub builds example):**
 
 ```
-docker compose -p tazama-extensions \
+docker compose --env-file .env --env-file secrets.env -p tazama-extensions \
   -f ./docker-compose.extensions.infrastructure.yaml \
   -f ./docker-compose.dev.extensions.yaml \
   [-f ./docker-compose.utils.pgadmin.yaml]   # if pgAdmin is selected
@@ -260,7 +272,7 @@ After a successful deployment, the following web interfaces are accessible from 
 - OpenSearch: <http://localhost:9200>
 - CouchDB: <http://localhost:5984>
 - Flowable: <http://localhost:8081>
-- SFTP: `sftp://localhost:12222` (user: `user`, password: `password`)
+- SFTP: `sftp://localhost:12222` (user: `user`, password: `TAZAMA_SFTP_PASSWORD` from `extensions/secrets.env`)
 - PostgreSQL (extensions): `localhost:15433`
 - pgAdmin (optional): <http://localhost:5051>
 
@@ -328,5 +340,31 @@ In the AWS deployment, the deploy scripts handle this step automatically -- see 
 ## 8.2. Docker Compose YAML structure
 
 View this file for additional detail about the Docker Compose files in this stack and how they relate to each other: [Docker Compose YAML Structure Overview](./docker-yaml-structure.md)
+
+<div style="text-align: right"><a href="#top">Top</a></div>
+
+## 8.3. Original default values
+
+Before `secrets.env` existed, these values were committed in the compose and env files. They are public, so use them for local development only and never on a reachable server. Keys marked MUST MATCH in the template need the same value in `core/secrets.env` or `biar/secrets.env` (see [root README section 6.2](../README.md#62-values-shared-between-stacks)).
+
+| Key | Original default | Used by |
+|---|---|---|
+| `TAZAMA_EXT_PG_PASSWORD` | `unused` | extensions-postgres, CMS, Flowable |
+| `TAZAMA_CORE_PG_PASSWORD` | `unused` | connection-studio, DEAPI, DEMS |
+| `TAZAMA_VALKEY_PASSWORD` | `redis-password` (Valkey had no password before) | DEAPI, DEMS, CMS, rule-studio |
+| `TAZAMA_PGADMIN_PASSWORD` | `password` | extensions pgAdmin |
+| `TAZAMA_SFTP_PASSWORD` | `password` | sftp |
+| `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | `5af1a07c4d63493121dfc55c33c8c1f2:245d2f2b4b0d373de787c8dac373d9fe` (`password` encrypted with the key below) | connection-studio |
+| `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` | `8fj29dkd82hs91kd93kd82hs91kd83ks` | connection-studio, DEAPI |
+| `TAZAMA_FLOWABLE_PASSWORD` | `test` | Flowable, CMS |
+| `TAZAMA_OPENSEARCH_PASSWORD` | `admin` | CMS, connection-studio, rule-studio |
+| `TAZAMA_COUCHDB_USERNAME` | `simon` | CouchDB, CMS |
+| `TAZAMA_COUCHDB_PASSWORD` | `1234` | CouchDB, CMS |
+| `TAZAMA_COUCHDB_COOKIE_SECRET` | (none - generate: `openssl rand -hex 32`) | CouchDB |
+| `TAZAMA_DOCKERHUB_USERNAME` | (placeholder - a real Docker Hub account is needed) | rule-studio backend |
+| `TAZAMA_DOCKERHUB_TOKEN` | (placeholder - a personal access token of that account is needed) | rule-studio backend |
+| `TAZAMA_SMTP_USER` | (empty) | CMS, connection-studio |
+| `TAZAMA_SMTP_PASS` | (empty) | CMS, connection-studio |
+| `TAZAMA_APM_SECRET_TOKEN` | (empty) | DEAPI |
 
 <div style="text-align: right"><a href="#top">Top</a></div>

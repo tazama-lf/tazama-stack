@@ -338,188 +338,102 @@ The deploy script patches `SERVER_B_HOST=extensions.tazama.internal` for AWS.
 
 ---
 
-### A.7 - Replace published default credentials with SSM-sourced secrets (partially implemented)
+### A.7 - Replace published default credentials with SSM-sourced secrets (implemented, #298)
 
 **Problem:** All three stacks ship with credentials committed in plaintext in the public GitHub repository. These include database passwords (`unused`), admin passwords (`password`, `admin123456789`), API secrets, and service credentials spanning at least 15 variables across `core/`, `extensions/`, and `biar/`. While the VPC private subnet prevents direct internet access to most services, published credentials enable trivial lateral movement after any initial foothold and leave the ALB-accessible NiFi UI directly exposed to credential-stuffing attacks.
 
-**What has been implemented:**
+**What is implemented (tazama-stack#298):**
 
-The deploy scripts now accept a `-Password` parameter. At deploy time the value is built into an in-memory overlay (never written to a committed file) and applied via `Set-RemoteEnvOverlay` to all PostgreSQL and Keycloak admin credential variables on Server A and Server B:
+Every credential is a `TAZAMA_*` key in one `secrets.env` file per component group (`core/`, `extensions/`, `biar/`) - see the root [README.md](../../README.md), section 6. Committed compose and env files only reference `${TAZAMA_*}` keys; no committed file holds a secret value. On AWS, `Set-ServerSecretsEnv` (`helpers.ps1`) renders each server's `secrets.env` from SSM Parameter Store:
 
-- `deploy-core.ps1 -Password '<pw>'` patches `core/.env` and all `core/env/` service env files on Server A: `POSTGRES_PASSWORD`, `RAW_HISTORY_DATABASE_PASSWORD`, `CONFIGURATION_DATABASE_PASSWORD`, `EVENT_HISTORY_DATABASE_PASSWORD`, `EVALUATION_DATABASE_PASSWORD`, `NEXT_PUBLIC_PG_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`
-- `deploy-extensions.ps1 -Password '<pw>'` patches `extensions/.env` and all `extensions/env/` service env files on Server B: `POSTGRES_PASSWORD`, `DB_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, `CONFIGURATION_DATABASE_PASSWORD`
-- `deploy.ps1 -Password '<pw>'` passes the value through to both scripts above
-- `env-core.tpl` was deleted (it previously committed only hardcoded credentials); `env-extensions.tpl` had its credential lines removed (DNS/URL overrides remain)
+- The key list comes from the group's committed `secrets.env.template`. A template key without an SSM mapping in `$Script:SecretsSsmMap` (`helpers.ps1`) stops the deploy.
+- Values are read with batched `aws ssm get-parameters --with-decryption`. A missing or empty parameter for a `[required]` key stops the deploy. The four NiFi keys are `[optional]` in the template (local `NIFI_AUTH=none` needs none of them) but required on AWS, which always runs NiFi in keycloak mode.
+- Each value is validated (rules in the table below), written as `KEY='value'` (single-quoted, so `$` stays literal), piped over SSH stdin (never on a command line) and stored with mode 600. No value is printed.
+- `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` has no parameter: it is derived from the SFTP password and the enrichment key in connection-studio's AES-256-CBC format.
+- Every compose command on the servers passes `--env-file .env --env-file secrets.env`.
 
-**What is still pending (SSM-sourced secrets for remaining credentials):**
+Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExtensionsOverlay`, `extensions/` for DEMS/DEAPI; B: `extensions/`; C: `biar/`), in `deploy-extensions.ps1` (A and B), and in `restart-service.ps1` / `deploy-service.ps1` before every compose call (dry runs excepted). The server files therefore always match SSM. The former `-Password` parameter of `deploy.ps1`, `deploy-core.ps1` and `deploy-extensions.ps1` is gone.
 
-The approach described below covers the remaining 10+ credentials (Redis, CouchDB, TRS crypto key, Hasura, pgAdmin, etc.) that the `-Password` param does not address. These are the eventual target; until then those services continue to use the published defaults.
+**To change a secret:** update the SSM parameter, then redeploy the consumers (`deploy.ps1`, or `restart-service.ps1` per service). Some services apply the value only when their data volume is first initialised (Postgres, Keycloak admin, pgAdmin, Flowable `rest-admin`); for those, change the stored value in the running service first. Root README, section 6, "Changing a secret after the first deployment".
 
-**Eventual approach:**
+**SSM parameters (all `SecureString`):**
 
-SSM Parameter Store is already used for `GH_TOKEN` (B.9). The same pattern extends to all service credentials: secrets are stored in SSM before deployment, fetched by the deploy scripts at deploy time using `aws ssm get-parameter --with-decryption`, and written to the correct env files on each instance via the existing `Set-RemoteEnvOverlay` mechanism. No secret ever touches a committed file.
+| SSM parameter | `secrets.env` key | Groups | Required | Notes |
+|---|---|---|---|---|
+| `/tazama/creds/postgres/password` | `TAZAMA_CORE_PG_PASSWORD`, `TAZAMA_EXT_PG_PASSWORD` | core, extensions, biar | yes | One value for both Postgres servers. URL-embedded. Postgres A runs with trust auth until #274. |
+| `/tazama/creds/valkey/password` | `TAZAMA_VALKEY_PASSWORD` | core, extensions | yes | |
+| `/tazama/creds/keycloak/admin_password` | `TAZAMA_KEYCLOAK_ADMIN_PASSWORD` | core | yes | First Keycloak start only |
+| `/tazama/creds/auth/client-secret` | `TAZAMA_AUTH_CLIENT_SECRET` | core | yes | Must match the realm's `auth-lib-client` secret |
+| `/tazama/creds/relay/auth-password` | `TAZAMA_RELAY_AUTH_PASSWORD` | core | yes | Must match the realm password of the relay's `AUTH_USERNAME` |
+| `/tazama/creds/jupyterhub/oidc-client-secret` | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` | core, biar | yes | core: realm import; biar: JupyterHub |
+| `/tazama/creds/jupyterhub/crypt_key` | `TAZAMA_JUPYTERHUB_CRYPT_KEY` | biar | yes | 64 hex characters |
+| `/tazama/creds/nifi/oidc-client-secret` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | core, biar | yes (AWS) | Hex only (no `$ \| & \`) - see G.2 |
+| `/tazama/creds/nifi/sensitive-props-key` | `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` | biar | yes (AWS) | Hex only; at least 12 characters; keep once set |
+| `/tazama/creds/nifi/keystore-password` | `TAZAMA_NIFI_KEYSTORE_PASSWORD` | biar | yes (AWS) | Hex only |
+| `/tazama/creds/nifi/truststore-password` | `TAZAMA_NIFI_TRUSTSTORE_PASSWORD` | biar | yes (AWS) | Hex only |
+| `/tazama/nextauth_secret` | `TAZAMA_DEMO_NEXTAUTH_SECRET` | core | yes | Older name outside `/tazama/creds/` |
+| `/tazama/creds/hasura/admin_secret` | `TAZAMA_HASURA_ADMIN_SECRET` | core | yes | |
+| `/tazama/creds/pgadmin/password` | `TAZAMA_PGADMIN_PASSWORD` | core, extensions | yes | First pgAdmin start only |
+| `/tazama/creds/apm/secret-token` | `TAZAMA_APM_SECRET_TOKEN` | core, extensions | no | Absent = empty |
+| `/tazama/creds/sftp/password` | `TAZAMA_SFTP_PASSWORD` | extensions | yes | No `:`; at most 15 bytes (connection-studio decrypt limit) |
+| (derived) | `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | extensions | - | From the SFTP password and the enrichment key |
+| `/tazama/creds/enrichment/encryption-key` | `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` | extensions | yes | Exactly 32 bytes; changing it makes stored credentials unreadable |
+| `/tazama/creds/flowable/password` | `TAZAMA_FLOWABLE_PASSWORD` | extensions | yes | First Flowable start only (`rest-admin`) |
+| `/tazama/creds/opensearch/admin_password` | `TAZAMA_OPENSEARCH_PASSWORD` | extensions | yes | Not checked while the security plugin is off (A.6) |
+| `/tazama/creds/couchdb/username` | `TAZAMA_COUCHDB_USERNAME` | extensions, biar | yes | URL-embedded |
+| `/tazama/creds/couchdb/password` | `TAZAMA_COUCHDB_PASSWORD` | extensions, biar | yes | URL-embedded |
+| `/tazama/creds/couchdb/cookie-secret` | `TAZAMA_COUCHDB_COOKIE_SECRET` | extensions | yes | Changing it drops CouchDB sessions |
+| `/tazama/creds/dockerhub/username` | `TAZAMA_DOCKERHUB_USERNAME` | extensions | yes | simulation-studio Docker Hub login |
+| `/tazama/creds/dockerhub/token` | `TAZAMA_DOCKERHUB_TOKEN` | extensions | yes | Read-only personal access token |
+| `/tazama/creds/smtp/user` | `TAZAMA_SMTP_USER` | extensions | no | Absent = sending disabled |
+| `/tazama/creds/smtp/password` | `TAZAMA_SMTP_PASS` | extensions | no | |
+| `/tazama/creds/ozone/s3_access_key` | `TAZAMA_S3_ACCESS_KEY` | biar | yes | |
+| `/tazama/creds/ozone/s3_secret` | `TAZAMA_S3_SECRET_KEY` | biar | yes | |
 
-Several services use different variable names for the same underlying credential - for example, the PostgreSQL core password appears as `POSTGRES_PASSWORD` in the server container, `DB_PASSWORD` in some clients, and `RAW_HISTORY_DATABASE_PASSWORD` / `CONFIGURATION_DATABASE_PASSWORD` / `EVENT_HISTORY_DATABASE_PASSWORD` in others. The overlay templates map one SSM value to all of them, so the operator sets one password in SSM and it propagates consistently.
+Validation applied by the renderer: no single quote or line break in any value; URL-embedded keys reject whitespace and `@ : / ? # % [ ] \ "`.
 
-> **Local dev follow-on:** The same consolidation is worth doing in the repo itself - adding canonical password variables to each stack's root `.env` and changing service env files to reference `${POSTGRES_PASSWORD}` etc., so a developer changes one line rather than hunting through a dozen files. This is a follow-on refactor, not part of the AWS deployment work.
-
-**Canonical SSM parameters:**
-
-| SSM parameter | Protects | Notes |
-|---|---|---|
-| `/tazama/postgres_core_password` | PostgreSQL - Server A | Server container + all `core/env/` clients |
-| `/tazama/postgres_extensions_password` | PostgreSQL - Server B (CMS) | Server container + `extensions/env/` clients |
-| `/tazama/keycloak_admin_password` | Keycloak admin console | `core/env/keycloak.env` |
-| `/tazama/hasura_admin_secret` | Hasura GraphQL admin | `core/docker-compose.utils.hasura.yaml` |
-| `/tazama/pgadmin_password` | pgAdmin web UI | Both `core/env/core-pgadmin.env` and `extensions/env/extensions-pgadmin.env` |
-| `/tazama/redis_password` | Redis/Valkey | `extensions/env/data-enrichment-service.env`, `event-monitoring-service.env` |
-| `/tazama/couchdb_password` | CouchDB admin | `extensions/env/case-management-system.env` - username `simon` should also be replaced |
-| `/tazama/auth_client_secret` | Auth service OAuth client | `core/env/auth-service.env` |
-| `/tazama/trs_crypto_key` | TRS signing key | `extensions/env/rule-studio.env` - use 32+ random characters |
-| `/tazama/relay_auth_password` | REST relay auth | `core/env/relay-service-rest.env` |
-| `/tazama/cms_auth_admin_password` | CMS Tazama auth admin | `extensions/env/case-management-system.env` |
-| `/tazama/cms_flowable_password` | CMS Flowable engine | `extensions/env/case-management-system.env` |
-| `/tazama/creds/nifi/oidc-client-secret` | NiFi Keycloak OIDC client (**implemented**, required) | Read by `Set-NifiAuthOverlay` (Server C, `biar/.env`) and `Set-NifiOidcOverlay` (Server A, `core/.env`, realm import) - see G.2 |
-| `/tazama/creds/nifi/sensitive-props-key` | NiFi flow sensitive-property encryption (**implemented**, required) | `biar/.env` - min 12 chars; hex only (no `$ \| & \`) |
-| `/tazama/creds/nifi/keystore-password` | NiFi TLS keystore (**implemented**, required) | `biar/.env` |
-| `/tazama/creds/nifi/truststore-password` | NiFi TLS truststore (**implemented**, required) | `biar/.env` |
-| `/tazama/ozone_s3g_secret_key` | Apache Ozone S3G | `biar/docker-compose.biar.infrastructure.yaml` |
-| `/tazama/opensearch_password` | OpenSearch admin | `extensions/env/case-management-system.env`, `connection-studio.env`, `rule-studio.env` - see also A.6 |
-| `/tazama/sftp_password` | SFTP server user | Special case - see note below |
-
-**Mapping - SSM parameter → env variables patched:**
-
-| SSM parameter | Variable name(s) | Target file(s) |
-|---|---|---|
-| `/tazama/postgres_core_password` | `POSTGRES_PASSWORD` | `core/docker-compose.base.infrastructure.yaml` |
-| | `POSTGRES_PASSWORD`, `DB_PASSWORD` | `extensions/env/` service env files (`data-enrichment-service.env`, `event-monitoring-service.env`) |
-| | `RAW_HISTORY_DATABASE_PASSWORD`, `CONFIGURATION_DATABASE_PASSWORD`, `EVENT_HISTORY_DATABASE_PASSWORD`, `EVALUATION_DATABASE_PASSWORD`, `NEXT_PUBLIC_PG_PASSWORD` | `core/env/` service env files (admin, tms, tp, rules, ea, etc.) |
-| `/tazama/postgres_extensions_password` | `POSTGRES_PASSWORD` | `extensions/docker-compose.extensions.infrastructure.yaml`, `extensions/.env`, `extensions/env/connection-studio.env` |
-| | `POSTGRES_PASSWORD`, `SPRING_DATASOURCE_PASSWORD` | `extensions/env/case-management-system.env` |
-| `/tazama/keycloak_admin_password` | `KEYCLOAK_ADMIN_PASSWORD` | `core/env/keycloak.env` |
-| `/tazama/hasura_admin_secret` | `HASURA_GRAPHQL_ADMIN_SECRET` | `core/docker-compose.utils.hasura.yaml` |
-| `/tazama/pgadmin_password` | `PGADMIN_DEFAULT_PASSWORD` | `core/env/core-pgadmin.env`, `extensions/env/extensions-pgadmin.env` |
-| `/tazama/redis_password` | `REDIS_PASSWORD` | `extensions/env/data-enrichment-service.env`, `extensions/env/event-monitoring-service.env` |
-| `/tazama/couchdb_password` | `COUCHDB_PASSWORD` | `extensions/env/case-management-system.env` |
-| `/tazama/auth_client_secret` | `CLIENT_SECRET` | `core/env/auth-service.env` |
-| `/tazama/trs_crypto_key` | `CRYPTO_SECRET_KEY` | `extensions/env/rule-studio.env` |
-| `/tazama/relay_auth_password` | `AUTH_PASSWORD` | `core/env/relay-service-rest.env` |
-| `/tazama/cms_auth_admin_password` | `TAZAMA_AUTH_ADMIN_PASSWORD` | `extensions/env/case-management-system.env` |
-| `/tazama/cms_flowable_password` | `FLOWABLE_PASSWORD` | `extensions/env/case-management-system.env` |
-| `/tazama/creds/nifi/oidc-client-secret` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `biar/.env` (Server C), `core/.env` (Server A, Keycloak realm import) |
-| `/tazama/creds/nifi/sensitive-props-key` | `TAZAMA_NIFI_SENSITIVE_PROPS_KEY` | `biar/.env` |
-| `/tazama/creds/nifi/keystore-password` | `TAZAMA_NIFI_KEYSTORE_PASSWORD` | `biar/.env` |
-| `/tazama/creds/nifi/truststore-password` | `TAZAMA_NIFI_TRUSTSTORE_PASSWORD` | `biar/.env` |
-| `/tazama/ozone_s3g_secret_key` | `OZONE-SITE.XML_ozone.s3g.secret.key` | `biar/docker-compose.biar.infrastructure.yaml` |
-| `/tazama/opensearch_password` | `OPENSEARCH_PASSWORD`, `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | `extensions/env/case-management-system.env`, `connection-studio.env`, `rule-studio.env` |
-| `/tazama/sftp_password` | `SFTP_PASSWORD_CONSUMER`, `SFTP_PASSWORD_PRODUCER` | `extensions/env/connection-studio.env` - see note below |
-
-> **SFTP special case:** The SFTP server user is defined in the `command:` line of the `atmoz/sftp` container in `extensions/docker-compose.extensions.infrastructure.yaml` as the literal string `user:password:1001`. This cannot be overridden by env var substitution without first changing the compose file to `${SFTP_USER}:${SFTP_PASSWORD}:1001`. That compose file change is a prerequisite for the overlay. Additionally, the `SFTP_PASSWORD_CONSUMER` and `SFTP_PASSWORD_PRODUCER` values in `connection-studio.env` use a `hash:salt` format specific to the SFTP server's authentication scheme - replacement values must be generated in that same format.
+Not in SSM, by decision (#298): the rule-studio / TRS browser crypto key pair (`VITE_CRYPTO_KEY` / `CRYPTO_SECRET_KEY`) stays committed - the frontend copy is baked into the public browser bundle, so it cannot be a secret. `TAZAMA_AUTH_ADMIN_USERNAME` / `TAZAMA_AUTH_ADMIN_PASSWORD` were removed from the CMS env. `GH_TOKEN` stays at `/tazama/gh_token` (B.9).
 
 **Commands to store secrets in SSM (run once, before Phase D):**
 
-Generate strong random passwords before running these. PowerShell built-in:
-```powershell
-Add-Type -AssemblyName System.Web
-[System.Web.Security.Membership]::GeneratePassword(32, 4)
-```
+Random hex values pass every validation rule above. The parameters that must match an existing realm or existing data (`auth/client-secret`, `relay/auth-password`, `enrichment/encryption-key`, `dockerhub/*`) take known values instead.
 
 ```powershell
-$region = "ap-south-1"
-$profile = "tazama"
-
-# PostgreSQL - Server A
-aws ssm put-parameter --name /tazama/postgres_core_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "PostgreSQL master password - Server A (core)" `
-  --region $region --profile $profile
-
-# PostgreSQL - Server B
-aws ssm put-parameter --name /tazama/postgres_extensions_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "PostgreSQL master password - Server B (extensions/CMS)" `
-  --region $region --profile $profile
-
-# Keycloak admin
-aws ssm put-parameter --name /tazama/keycloak_admin_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "Keycloak admin console password" `
-  --region $region --profile $profile
-
-# Hasura admin secret
-aws ssm put-parameter --name /tazama/hasura_admin_secret --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "Hasura GraphQL admin secret" `
-  --region $region --profile $profile
-
-# pgAdmin (applied to both servers)
-aws ssm put-parameter --name /tazama/pgadmin_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "pgAdmin web UI password" `
-  --region $region --profile $profile
-
-# Redis/Valkey
-aws ssm put-parameter --name /tazama/redis_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "Redis/Valkey auth password" `
-  --region $region --profile $profile
-
-# CouchDB
-aws ssm put-parameter --name /tazama/couchdb_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "CouchDB admin password" `
-  --region $region --profile $profile
-
-# Auth service OAuth client secret
-aws ssm put-parameter --name /tazama/auth_client_secret --type SecureString `
-  --value "<generate-strong-secret>" `
-  --description "Auth service OAuth client secret" `
-  --region $region --profile $profile
-
-# TRS crypto signing key (32+ chars)
-aws ssm put-parameter --name /tazama/trs_crypto_key --type SecureString `
-  --value "<generate-32-char-random-string>" `
-  --description "TRS transaction record signing key" `
-  --region $region --profile $profile
-
-# REST relay auth password
-aws ssm put-parameter --name /tazama/relay_auth_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "REST relay service auth password" `
-  --region $region --profile $profile
-
-# CMS auth admin password
-aws ssm put-parameter --name /tazama/cms_auth_admin_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "CMS Tazama auth admin password" `
-  --region $region --profile $profile
-
-# CMS Flowable password
-aws ssm put-parameter --name /tazama/cms_flowable_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "CMS Flowable workflow engine password" `
-  --region $region --profile $profile
-
-# NiFi (keycloak mode) - four secrets, all REQUIRED: deploy-biar.ps1 refuses to
-# deploy without them. Use hex values: '$', '|', '&' and '\' are rejected.
-foreach ($n in 'oidc-client-secret', 'sensitive-props-key', 'keystore-password', 'truststore-password') {
-  aws ssm put-parameter --name "/tazama/creds/nifi/$n" --type SecureString `
-    --value ([Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()) `
-    --description "NiFi $n" `
-    --region $region --profile $profile
+$region = 'ap-south-1'
+$awsProfile = 'tazama'
+function New-HexSecret([int]$Bytes = 32) {
+  [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)).ToLower()
+}
+function Set-TazamaParam([string]$Name, [string]$Value) {
+  aws ssm put-parameter --name $Name --type SecureString --value $Value `
+    --region $region --profile $awsProfile
 }
 
-# Apache Ozone S3G secret key
-aws ssm put-parameter --name /tazama/ozone_s3g_secret_key --type SecureString `
-  --value "<generate-strong-secret>" `
-  --description "Apache Ozone S3 gateway secret key" `
-  --region $region --profile $profile
+# Random values
+foreach ($n in 'postgres/password', 'valkey/password', 'keycloak/admin_password',
+               'jupyterhub/oidc-client-secret', 'jupyterhub/crypt_key',
+               'nifi/oidc-client-secret', 'nifi/sensitive-props-key',
+               'nifi/keystore-password', 'nifi/truststore-password',
+               'hasura/admin_secret', 'pgadmin/password',
+               'flowable/password', 'opensearch/admin_password',
+               'couchdb/password', 'couchdb/cookie-secret', 'ozone/s3_secret') {
+  Set-TazamaParam "/tazama/creds/$n" (New-HexSecret)
+}
+Set-TazamaParam /tazama/creds/sftp/password (New-HexSecret 7)   # 14 characters (connection-studio limit: at most 15 bytes)
+Set-TazamaParam /tazama/nextauth_secret ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)))
+Set-TazamaParam /tazama/creds/enrichment/encryption-key (New-HexSecret 16)   # exactly 32 characters
+Set-TazamaParam /tazama/creds/couchdb/username '<admin user name>'
+Set-TazamaParam /tazama/creds/ozone/s3_access_key '<access key>'
 
-# OpenSearch admin password (also used by A.6 to re-enable the security plugin)
-aws ssm put-parameter --name /tazama/opensearch_password --type SecureString `
-  --value "<generate-strong-password>" `
-  --description "OpenSearch admin password" `
-  --region $region --profile $profile
+# Must match the realm (core/auth/keycloak/realms) or the live Keycloak
+Set-TazamaParam /tazama/creds/auth/client-secret '<auth-lib-client secret>'
+Set-TazamaParam /tazama/creds/relay/auth-password '<password of the relay user>'
+
+# simulation-studio Docker Hub login (read-only personal access token)
+Set-TazamaParam /tazama/creds/dockerhub/username '<Docker Hub user>'
+Set-TazamaParam /tazama/creds/dockerhub/token '<personal access token>'
+
+# Optional: /tazama/creds/apm/secret-token, /tazama/creds/smtp/user, /tazama/creds/smtp/password
 ```
 
 **Verify all parameters were stored:**
@@ -533,15 +447,7 @@ aws ssm get-parameters-by-path `
   --output table
 ```
 
-**Required changes to remaining deploy scripts and overlay templates (pending):**
-
-The deploy scripts now handle PostgreSQL and Keycloak credentials via `-Password`. The remaining credentials listed in the SSM table above still need SSM integration. The pattern is the same as what was implemented:
-
-1. Fetch each secret at deploy time: `aws ssm get-parameter --name /tazama/<param> --with-decryption --query Parameter.Value --output text`
-2. Build a combined overlay in-memory that includes the credential entries
-3. Pass the combined overlay to `Set-RemoteEnvOverlay` -- the existing `sed`-based patching handles the rest
-
-**Status:** PostgreSQL + Keycloak credentials - implemented. Remaining 10+ credentials - pending. Required before this deployment is safe for beta use.
+**Status:** Implemented (#298). Every committed credential default is gone from the compose and env files; the AWS servers read every credential from SSM. Follow-ups: rotate the three parameters seeded with formerly public values (`auth/client-secret`, `relay/auth-password`, `enrichment/encryption-key` - each needs a coordinated realm or data change), and enable password auth on Postgres A (#274).
 
 ---
 
@@ -1461,18 +1367,18 @@ authentication is entirely via the IAM profile on your local AWS CLI session.
 
 ```powershell
 cd tazama-stack\infra\aws\scripts
-.\deploy.ps1 -Password 'your-strong-password'
+.\deploy.ps1
 ```
 
-The `-Password` value is applied in-memory to all PostgreSQL and Keycloak admin credential variables on Server A and Server B. It is never written to a committed file.
+Every credential comes from SSM Parameter Store: each script renders the server's `secrets.env` files from `/tazama/*` before starting containers, and stops if a required parameter is missing (A.7 lists the parameters and the seeding commands).
 
 Or run the three deploy scripts individually if you want to validate each server
 before moving on to the next. The runnable scripts are, in order:
 
 ```powershell
-.\deploy-core.ps1        -Password 'your-strong-password'  # Server A: waits for bootstrap, starts tazama-core
-.\deploy-extensions.ps1  -Password 'your-strong-password'  # Server A: adds DEMS/DEAPI; Server B: starts tazama-extensions
-.\deploy-biar.ps1                                           # Server C: waits for bootstrap, starts tazama-biar
+.\deploy-core.ps1        # Server A: waits for bootstrap, starts tazama-core
+.\deploy-extensions.ps1  # Server A: adds DEMS/DEAPI; Server B: starts tazama-extensions
+.\deploy-biar.ps1        # Server C: waits for bootstrap, starts tazama-biar
 ```
 
 > **Note:** `helpers.ps1` (documented in D.1) is a function library, not a script
@@ -1493,10 +1399,11 @@ before moving on to the next. The runnable scripts are, in order:
 | `Invoke-RemoteCommand` | SSH to an EC2 instance via EICE ProxyCommand and run a shell command |
 | `Copy-ToRemote` | SCP a file to an EC2 instance via EICE |
 | `Set-RemoteEnvOverlay` | Reads a `KEY=VALUE` overlay (from a local file via `-OverlayFile` or an inline string via `-OverlayContent`) and applies each entry to a remote `.env` using `sed` (replaces existing keys, appends missing ones). Exactly one of the two parameters must be supplied. |
-| `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL and sources `NEXTAUTH_SECRET` from SSM into `core/.env`. No-op when no custom domain is active. |
-| `Set-JupyterHubOidcOverlay` | Writes the JupyterHub public URL and the OIDC client secret (from SSM) into `core/.env` for the Keycloak realm import of the `jupyterhub` client. No-op when no custom domain is active. |
-| `Set-BiarServiceEnvOverlay` | Server C: writes the public Keycloak/hub URLs and the SSM JupyterHub client secret and crypt key into `biar/env/biar-jupyterhub.env`, and `COUCHDB_URL` (SSM CouchDB password) into `biar/env/biar-unstructured-pipeline.env`. Throws when a JupyterHub parameter is missing. |
-| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays (`env-extensions.tpl` / `env-biar.tpl`, `KEYCLOAK_HOSTNAME`, `KC_HOSTNAME_PORT` strip, demo UI overlay, JupyterHub OIDC overlay, NiFi and biar service overlays on C) - used by `deploy-biar.ps1` and after any `git reset --hard` on the target server |
+| `Set-ServerSecretsEnv` | Renders `<group>/secrets.env` (core, extensions or biar) on a server from SSM `/tazama/*`: key list from the committed `secrets.env.template`, mapping in `$Script:SecretsSsmMap`, values validated and single-quoted, written with mode 600 over SSH stdin. Throws on an unmapped key or a missing required parameter. See A.7. |
+| `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL in `core/.env`. No-op when no custom domain is active. |
+| `Set-JupyterHubOidcOverlay` | Writes the JupyterHub public URL into `core/.env` for the Keycloak realm import of the `jupyterhub` client. No-op when no custom domain is active. |
+| `Set-BiarServiceEnvOverlay` | Server C: writes the public Keycloak issuer and hub URLs into `biar/env/biar-jupyterhub.env`. Warns and skips when no custom domain is active. |
+| `Set-ServerEnvOverlays` | Renders a server's `secrets.env` files (`Set-ServerSecretsEnv`) and re-applies its full set of per-server AWS env overlays (`env-extensions.tpl` / `env-biar.tpl`, `KEYCLOAK_HOSTNAME`, `KC_HOSTNAME_PORT` strip, demo UI overlay, JupyterHub OIDC overlay, NiFi and biar service overlays on C) - used by the deploy scripts and after any `git reset --hard` on the target server |
 | `Wait-Bootstrap` | Polls every 30 s until `/home/ec2-user/.bootstrap-complete` exists on the remote instance |
 
 **EICE SSH ProxyCommand used internally:**
@@ -1517,7 +1424,7 @@ port 22 is exposed anywhere.
 
 1. Reads `server_a_instance_id` from `tofu output`
 2. Calls `Wait-Bootstrap` (polls up to 15 min for `.bootstrap-complete`)
-3. Pulls the latest repo changes on Server A (`git reset --hard` + `git pull`); strips `KC_HOSTNAME_PORT` from `keycloak.env` (local-only variable — `KC_PROXY=edge` on AWS derives the port from `X-Forwarded-Port: 443` sent by the ALB); if an ALB hostname is present in tofu outputs, injects `KEYCLOAK_HOSTNAME` into `core/.env` via `Set-RemoteEnvOverlay -OverlayContent`
+3. Pulls the latest repo changes on Server A (`git reset --hard` + `git pull`); renders `core/secrets.env` from SSM (stops if a required parameter is missing); strips `KC_HOSTNAME_PORT` from `keycloak.env` (local-only variable — `KC_PROXY=edge` on AWS derives the port from `X-Forwarded-Port: 443` sent by the ALB); if an ALB hostname is present in tofu outputs, injects `KEYCLOAK_HOSTNAME` into `core/.env` via `Set-RemoteEnvOverlay -OverlayContent`
 4. Copies the Keycloak realm JSON to Server A
 5. Starts the tazama-core stack on Server A with the full compose chain, retrying up to 3× if Postgres is still initialising (see note below)
 
@@ -1526,11 +1433,10 @@ port 22 is exposed anywhere.
 | Parameter | Description |
 |---|---|
 | `-NoPull` | Skip `--pull always` on the `docker compose up` command. Use when images are already present on the host (e.g. retrying after a failed start). The first retry attempt within the script automatically drops the pull flag regardless. |
-| `-Password` | PostgreSQL superuser password and Keycloak admin password. Applied in-memory via `Set-RemoteEnvOverlay` to `core/.env` and all `core/env/` service env files on Server A. Sets `POSTGRES_PASSWORD`, `RAW_HISTORY_DATABASE_PASSWORD`, `CONFIGURATION_DATABASE_PASSWORD`, `EVENT_HISTORY_DATABASE_PASSWORD`, `EVALUATION_DATABASE_PASSWORD`, `NEXT_PUBLIC_PG_PASSWORD`, and `KEYCLOAK_ADMIN_PASSWORD`. If omitted, local-dev defaults (`unused` / `password`) are left in place -- do not omit for any non-development deployment. |
 
 **Full compose chain on Server A:**
 ```
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.base.infrastructure.yaml \
   -f ./docker-compose.base.override.yaml       <- always position 2; publishes NATS/PG/Valkey
   -f ./docker-compose.full.cfg.yaml \
@@ -1557,9 +1463,9 @@ docker compose -p tazama-core \
    DEMS and DEAPI run on Server A and consume `extensions/.env` for their `CORS_ORIGINS`
    value; without this overlay `SERVER_B_HOST` stays at the local-dev default `localhost`.
 
-2. **Server A** - pulls latest repo then adds DEMS + DEAPI to the running `tazama-core` project:
+2. **Server A** - pulls latest repo, renders `extensions/secrets.env` from SSM, then adds DEMS + DEAPI to the running `tazama-core` project:
    ```
-   cd extensions/ && docker compose -p tazama-core \
+   cd extensions/ && docker compose --env-file .env --env-file secrets.env -p tazama-core \
      -f ./docker-compose.hub.extensions.apis.yaml up -d
    ```
    These APIs must be reachable before TCS/TRS backends start on Server B.
@@ -1567,15 +1473,16 @@ docker compose -p tazama-core \
 3. **Server B** - waits for bootstrap (up to 15 min)
 4. **Server B** - applies `templates/env-extensions.tpl` overlay to `extensions/.env`:
    sets `SERVER_A_HOST=core.tazama.internal` and `SERVER_B_HOST=extensions.tazama.internal`
-5. **Server B** - if `-Password` is supplied, applies a second in-memory credential overlay to `extensions/.env` and all `extensions/env/` service env files: sets `POSTGRES_PASSWORD`, `DB_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, and `CONFIGURATION_DATABASE_PASSWORD`
+5. **Server B** - renders `extensions/secrets.env` from SSM (stops if a required parameter is missing)
 6. **Server B** - SCP `core/auth/test-public-key.pem` → `extensions/auth/`
    (required by TCS/TRS for JWT validation; on single-machine dev the bat
    script copies it automatically - here we do it from the local repo)
 7. **Server B** - starts the extensions stack:
    ```
-   docker compose -p tazama-extensions \
+   docker compose --env-file .env --env-file secrets.env -p tazama-extensions \
      -f ./docker-compose.extensions.infrastructure.yaml \
      -f ./docker-compose.hub.extensions.yaml \
+     -f ./docker-compose.utils.pgadmin.yaml \
      up -d
    ```
    TCS (backend + frontend), TRS (backend + frontend), and CMS frontend pull from DockerHub. CMS backend still builds from source until `tazamaorg/case-management-system-backend` is published.
@@ -1585,7 +1492,6 @@ docker compose -p tazama-core \
 | Parameter | Description |
 |---|---|
 | `-NoPull` | Skip `--pull always` on `docker compose up`. |
-| `-Password` | PostgreSQL password for Server B's database and all extension service clients. Applied in-memory -- never written to a committed file. If omitted, local-dev defaults (`unused`) are left in place. |
 
 ---
 
@@ -1595,20 +1501,20 @@ docker compose -p tazama-core \
 
 1. Waits for bootstrap on Server C (up to 15 min)
 2. Pulls the latest repo on Server C - ensures the server is on the correct branch
-3. Applies the Server C env overlays via `Set-ServerEnvOverlays -Server C` (stops before any container starts if a required SSM parameter is missing):
+3. Renders `biar/secrets.env` from SSM and applies the Server C env overlays via `Set-ServerEnvOverlays -Server C` (stops before any container starts if a required SSM parameter is missing):
    - `templates/env-biar.tpl` into `biar/.env` (which arrives via git pull) - sets all three host vars:
      - `SERVER_A_HOST=core.tazama.internal`
      - `SERVER_B_HOST=extensions.tazama.internal`
      - `SERVER_C_HOST=biar.tazama.internal`
-   - NiFi keycloak mode with SSM secrets (`Set-NifiAuthOverlay`)
-   - JupyterHub Keycloak settings and the CouchDB URL in the service env files (`Set-BiarServiceEnvOverlay`)
+   - NiFi keycloak mode (`Set-NifiAuthOverlay`; the NiFi secrets are in `biar/secrets.env`)
+   - JupyterHub public Keycloak and hub URLs (`Set-BiarServiceEnvOverlay`)
 4. Creates the Tazama warehouse directory: `sudo mkdir -p /opt/Tazama_Warehouse` - bind-mounted by automation-orchestrator and datalakehouse-api
 5. **Staged Ozone startup** (SCM must fully initialise before OM and datanodes):
    - Starts `scm` only, waits 20 s for SCM to initialise
    - Starts `om`, waits 15 s for OM to register
    - Brings up the full stack:
      ```
-     docker compose -p tazama-biar \
+     docker compose --env-file .env --env-file secrets.env -p tazama-biar \
        -f ./docker-compose.biar.infrastructure.yaml \
        -f ./docker-compose.hub.biar.yaml \
        -f ./docker-compose.utils.init.yaml \
@@ -1687,12 +1593,11 @@ each sub-script waits for its server's bootstrap internally.
 
 | Parameter | Description |
 |---|---|
-| `-Password` | Passed through to `deploy-core.ps1` and `deploy-extensions.ps1`. Sets PostgreSQL and Keycloak admin passwords on both servers. |
 | `-NoPull` | Passed through to all three sub-scripts. Skips `--pull always` on `docker compose up`. |
 
 ```powershell
 cd tazama-stack\infra\aws\scripts
-.\deploy.ps1 -Password 'your-strong-password'
+.\deploy.ps1
 ```
 
 ---
@@ -1764,10 +1669,11 @@ Provides the following functions:
 | `Invoke-RemoteCommand` | SSH to an EC2 instance via the EICE ProxyCommand and runs a bash command; throws on non-zero exit |
 | `Copy-ToRemote` | SCP a local file to an EC2 instance via EICE |
 | `Set-RemoteEnvOverlay` | Reads a `KEY=VALUE` overlay (from a local file via `-OverlayFile` or an inline string via `-OverlayContent`) and applies each entry to a remote `.env` file using `sed` (replaces existing keys, appends missing ones). Exactly one of the two parameters must be supplied. |
-| `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL (`DEMO_PUBLIC_URL`) and sources `DEMO_NEXTAUTH_SECRET` from SSM into `core/.env`. No-op when no custom domain is active. Shared by deploy-core, deploy-service, and restart-service. |
-| `Set-JupyterHubOidcOverlay` | Writes `JUPYTERHUB_PUBLIC_URL` (`https://jupyter.<your-zone>`) and `JUPYTERHUB_OIDC_CLIENT_SECRET` (from SSM `/tazama/creds/jupyterhub/oidc-client-secret`) into `core/.env` on Server A. Keycloak resolves both into the `jupyterhub` client when it imports the realm. No-op when no custom domain is active; if the SSM parameter is missing it warns and blanks the key, so the import falls back to the committed test secret. |
-| `Set-BiarServiceEnvOverlay` | Server C. Writes `KEYCLOAK_ISSUER_URL`, `JUPYTERHUB_PUBLIC_URL`, `KEYCLOAK_CLIENT_SECRET` (SSM `/tazama/creds/jupyterhub/oidc-client-secret`) and `JUPYTERHUB_CRYPT_KEY` (SSM `/tazama/creds/jupyterhub/crypt_key`) into `biar/env/biar-jupyterhub.env`, and `COUCHDB_URL` (user `simon`, SSM `/tazama/creds/couchdb/password`) into `biar/env/biar-unstructured-pipeline.env`. `$` is written as `$$` because Compose interpolates env files. Without a custom domain the JupyterHub part is skipped with a warning; a missing JupyterHub parameter throws; a missing CouchDB parameter warns and keeps the committed URL. |
-| `Set-ServerEnvOverlays` | Re-applies a server's full set of per-server AWS env overlays after a `git reset --hard` restores committed local-dev defaults: `env-extensions.tpl` (A and B), `env-biar.tpl` (C), `KEYCLOAK_HOSTNAME` injection and `KC_HOSTNAME_PORT` strip (A), the demo UI overlay (A), the JupyterHub OIDC overlay (A), and the NiFi auth and biar service overlays (C). |
+| `Set-ServerSecretsEnv` | Renders `<group>/secrets.env` (core, extensions or biar) on a server from SSM `/tazama/*`. Key list from the committed `secrets.env.template`, mapping in `$Script:SecretsSsmMap`; values validated, single-quoted and written with mode 600 over SSH stdin. Throws on an unmapped template key or a missing required parameter. See A.7. |
+| `Set-DemoUiOverlay` | Points the tazama-demo UI at its public HTTPS URL (`DEMO_PUBLIC_URL`) in `core/.env`. No-op when no custom domain is active. Shared by deploy-core, deploy-service, and restart-service. |
+| `Set-JupyterHubOidcOverlay` | Writes `JUPYTERHUB_PUBLIC_URL` (`https://jupyter.<your-zone>`) into `core/.env` on Server A. Keycloak resolves it (and `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` from `core/secrets.env`) into the `jupyterhub` client when it imports the realm. No-op when no custom domain is active. |
+| `Set-BiarServiceEnvOverlay` | Server C. Writes `KEYCLOAK_ISSUER_URL` and `JUPYTERHUB_PUBLIC_URL` into `biar/env/biar-jupyterhub.env`. Without a custom domain it is skipped with a warning. The JupyterHub client secret and crypt key, and the CouchDB credentials of the unstructured pipeline, come from `biar/secrets.env`. |
+| `Set-ServerEnvOverlays` | Renders the server's `secrets.env` files (`Set-ServerSecretsEnv`: `core/` and `extensions/` on A, `extensions/` on B, `biar/` on C) and re-applies its full set of per-server AWS env overlays after a `git reset --hard` restores committed local-dev defaults: `env-extensions.tpl` (A and B), `env-biar.tpl` (C), `KEYCLOAK_HOSTNAME` injection and `KC_HOSTNAME_PORT` strip (A), the demo UI overlay (A), the JupyterHub OIDC overlay (A), and the NiFi auth and biar service overlays (C). |
 | `Wait-Bootstrap` | Polls an instance until the bootstrap script has written its completion marker (up to 15 min) |
 
 (`New-SshConfig` is an internal helper that writes the temporary per-connection SSH config with the EICE ProxyCommand; it is not called by other scripts directly.)
@@ -1803,11 +1709,8 @@ immediately after `tofu apply` - each sub-script waits for its server's
 first-boot bootstrap to complete before proceeding.
 
 ```powershell
-# Full deploy with default (dev) credentials
+# Full deploy (credentials from SSM, see A.7)
 .\deploy.ps1
-
-# Full deploy with production password
-.\deploy.ps1 -Password 'your-strong-password'
 
 # Redeploy without re-pulling images (e.g. after a failed start)
 .\deploy.ps1 -NoPull
@@ -1815,7 +1718,6 @@ first-boot bootstrap to complete before proceeding.
 
 | Parameter | Description |
 |---|---|
-| `-Password` | PostgreSQL superuser and Keycloak admin password. Passed to deploy-core and deploy-extensions. If omitted, local-dev defaults are left in place. |
 | `-NoPull` | Skip `--pull always` on all `docker compose up` calls. |
 
 ---
@@ -1828,20 +1730,18 @@ Deploys the **tazama-core** stack on Server A.  Steps:
 
 1. Waits for Server A bootstrap to complete.
 2. Pulls latest repo on Server A.
-3. Copies `core/.env` to Server A; optionally applies a credentials overlay.
+3. Renders `core/secrets.env` from SSM (stops if a required parameter is missing).
 4. Injects `KEYCLOAK_HOSTNAME` from tofu outputs (if an ALB is active) and, when a custom domain is active, the tazama-demo and JupyterHub OIDC overlays into `core/.env`.
 5. Copies the Keycloak realm JSON to Server A. Keycloak imports it only if the `tazama` realm does not exist yet (see [the realm FAQ](#ive-set-up-some-users-on-keycloak-already---how-can-i-save-these-if-i-want-to-redeploy-the-system-somewhere-else-or-in-the-future)).
 6. Starts the full core stack (infrastructure, rules, TP, TMS, auth, relay, logs, pgAdmin, Hasura) with up to 3 retries to handle the Postgres startup race condition.
 
 ```powershell
 .\deploy-core.ps1
-.\deploy-core.ps1 -Password 'your-strong-password'
 .\deploy-core.ps1 -NoPull
 ```
 
 | Parameter | Description |
 |---|---|
-| `-Password` | Sets `POSTGRES_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`, and all service-level DB password variables on Server A. |
 | `-NoPull` | Skip `--pull always`. |
 
 ---
@@ -1854,23 +1754,21 @@ Deploys DEMS + DEAPI on **Server A**, then the **tazama-extensions** stack on
 Server B.  Steps:
 
 1. Copies `extensions/.env` to Server A and applies `env-extensions.tpl` overlay (sets `SERVER_B_HOST=extensions.tazama.internal` so CORS origins resolve correctly for DEMS/DEAPI).
-2. Pulls latest repo on Server A, then starts DEMS and DEAPI.
+2. Pulls latest repo on Server A, renders `extensions/secrets.env` from SSM, then starts DEMS and DEAPI.
 3. Waits for Server B bootstrap.
 4. Pulls latest repo on Server B.
 5. Copies `extensions/.env` to Server B and applies the same `env-extensions.tpl` overlay.
-6. Optionally applies a credentials overlay to `extensions/.env` and all `extensions/env/` service files.
+6. Renders `extensions/secrets.env` on Server B from SSM.
 7. Copies `core/auth/test-public-key.pem` to Server B (required by TCS/TRS for JWT verification).
 8. Starts the extensions stack (OpenSearch, CMS, TCS, TRS, pgAdmin).
 
 ```powershell
 .\deploy-extensions.ps1
-.\deploy-extensions.ps1 -Password 'your-strong-password'
 .\deploy-extensions.ps1 -NoPull
 ```
 
 | Parameter | Description |
 |---|---|
-| `-Password` | Sets `POSTGRES_PASSWORD`, `DB_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, and `CONFIGURATION_DATABASE_PASSWORD` on Server B. |
 | `-NoPull` | Skip `--pull always`. |
 
 ---
@@ -1883,7 +1781,7 @@ Deploys the **tazama-biar** stack on Server C.  Steps:
 
 1. Waits for Server C bootstrap.
 2. Pulls latest repo on Server C.
-3. Copies `biar/.env` to Server C and applies `env-biar.tpl` overlay (sets all three `SERVER_*_HOST` vars).
+3. Copies `biar/.env` to Server C and applies `env-biar.tpl` overlay (sets all three `SERVER_*_HOST` vars); renders `biar/secrets.env` from SSM.
 4. Creates `/opt/Tazama_Warehouse` on Server C (bind-mounted by automation-orchestrator and datalakehouse-api).
 5. Starts the stack in stages to respect the Ozone SCM → OM → datanode initialisation order.
 
@@ -2050,7 +1948,7 @@ running in the same Compose project (inspected read-only, never touched), then
 issues:
 
 ```text
-docker compose -p <project> <-f chain> up -d --no-deps <Service>
+docker compose --env-file .env --env-file secrets.env -p <project> <-f chain> up -d --no-deps <Service>
 ```
 
 `up` with a single named service plus `--no-deps` creates only that one
@@ -2831,26 +2729,26 @@ Then redeploy extensions:
 
 > **Tazama Demo UI (`demo.<your-zone>`).** The demo is a backend-for-frontend: the browser only talks to its own origin, while the Next.js server reaches TMS, Admin, and NATS over the container network, so no extra CORS origins are required. Login is handled by the Tazama **auth-service** using Keycloak's direct access (password) grant - the browser is never redirected to Keycloak - so **no Keycloak redirect URI or web-origin change is needed** (the same reason the other frontends work as-is). The only prerequisite when `enable_custom_domain = true` is:
 >
-> - **`NEXTAUTH_SECRET` in SSM.** `deploy-core.ps1` reads `/tazama/nextauth_secret` (SecureString) and writes it to `core/.env` as `DEMO_NEXTAUTH_SECRET`. Create it first:
+> - **`NEXTAUTH_SECRET` in SSM.** The deploy scripts render `/tazama/nextauth_secret` (SecureString) into `core/secrets.env` as `TAZAMA_DEMO_NEXTAUTH_SECRET` (A.7). Create it first:
 >   ```powershell
 >   aws ssm put-parameter --name /tazama/nextauth_secret --type SecureString --value (openssl rand -base64 32)
 >   ```
->   If absent, the demo falls back to the committed test secret (acceptable only for a throwaway sandbox).
+>   If absent, the deploy stops before starting any container.
 >
 > `deploy-core.ps1` sets `DEMO_PUBLIC_URL=https://demo.<your-zone>` in `core/.env`; the demo service interpolates it into `AUTH_URL`, `NEXT_PUBLIC_URL`, and `NEXT_PUBLIC_WS_URL`. Locally these default to `http://localhost:3011`.
 >
-> **First-time bring-up without a full redeploy.** To introduce the demo onto a server whose core stack is already running, use [`deploy-service.ps1`](#deploy-serviceps1) instead of re-running `deploy-core.ps1` (which would recreate the whole stack). It clones the compose chain from a running sibling and starts only the new container - additive and non-destructive. It also re-applies the demo public URL + `NEXTAUTH_SECRET` overlay, so no merge to `dev` is required to deploy the feature branch:
+> **First-time bring-up without a full redeploy.** To introduce the demo onto a server whose core stack is already running, use [`deploy-service.ps1`](#deploy-serviceps1) instead of re-running `deploy-core.ps1` (which would recreate the whole stack). It clones the compose chain from a running sibling and starts only the new container - additive and non-destructive. It also re-renders `core/secrets.env` and re-applies the demo public URL overlay, so no merge to `dev` is required to deploy the feature branch:
 > ```powershell
 > .\deploy-service.ps1 -Server A -Service tazama-demo -FromService tms -RepoPull <demo-branch>
 > ```
 
-> **JupyterHub Keycloak login (`jupyter.<your-zone>`).** JupyterHub logs users in through the `jupyterhub` client of the Keycloak `tazama` realm (authorization code flow), so the client needs the public hub URL as its redirect URI and a secret shared with the hub. The committed realm file holds placeholders for both (local defaults `http://localhost:8000` and `jupyterhub-test-secret`). When `enable_custom_domain = true`:
+> **JupyterHub Keycloak login (`jupyter.<your-zone>`).** JupyterHub logs users in through the `jupyterhub` client of the Keycloak `tazama` realm (authorization code flow), so the client needs the public hub URL as its redirect URI and a secret shared with the hub. The committed realm file holds placeholders for both: `${JUPYTERHUB_PUBLIC_URL}` (local default `http://localhost:8000`) and `${JUPYTERHUB_OIDC_CLIENT_SECRET}`, which the keycloak service sets from `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` in `core/secrets.env`. When `enable_custom_domain = true`:
 >
-> - **Client secret in SSM.** `deploy-core.ps1` reads `/tazama/creds/jupyterhub/oidc-client-secret` (SecureString) and writes it to `core/.env` as `JUPYTERHUB_OIDC_CLIENT_SECRET`. Create it first:
+> - **Client secret in SSM.** The deploy scripts render `/tazama/creds/jupyterhub/oidc-client-secret` (SecureString) into `core/secrets.env` (realm import) and `biar/secrets.env` (hub) as `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` (A.7). Create it first:
 >   ```powershell
 >   aws ssm put-parameter --name /tazama/creds/jupyterhub/oidc-client-secret --type SecureString --value (openssl rand -hex 32)
 >   ```
->   If absent, the client keeps the committed test secret (acceptable only for a throwaway sandbox).
+>   If absent, the deploy stops before starting any container.
 > - **Public URL.** `deploy-core.ps1` sets `JUPYTERHUB_PUBLIC_URL=https://jupyter.<your-zone>` in `core/.env` from the tofu output `jupyter_public_url`. If your state predates that output, run `tofu apply` once (no resource changes) so the output exists; until then the overlay is skipped.
 >
 > Keycloak applies these values **only when it imports the realm**, that is on a fresh Keycloak container. On a running realm, change the `jupyterhub` client in the Keycloak Administration Console instead, or force a reimport (see the [realm FAQ](#ive-set-up-some-users-on-keycloak-already---how-can-i-save-these-if-i-want-to-redeploy-the-system-somewhere-else-or-in-the-future)). The hub side on Server C must use the same values - see [F.6](#f6-server-c-validation).
@@ -3017,14 +2915,14 @@ Invoke-RestMethod http://localhost:8000/hub/health
 
 > **JupyterHub login (Keycloak mode, the default).** Open `https://jupyter.<your-zone>`; JupyterHub sends you to the Keycloak login page. Accounts are Keycloak users with the `JUPYTER_USER` or `JUPYTER_ADMIN` realm role, granted through the `/tazama-jupyter/JUPYTER_USER/<ORG>` and `/tazama-jupyter/JUPYTER_ADMIN/<ORG>` groups. The realm import includes the test user `jupyter-user@tazama.org` / `password`; change its password or remove it on any shared deployment. There is no sign-up and no `/hub/authorize` approval step. See [biar/README.md section 9.4](../../biar/README.md#94-jupyterhub-keycloak-login-defaults-changes-and-maintenance).
 >
-> **Hub settings on Server C.** `biar/env/biar-jupyterhub.env` must point at the public Keycloak and hub URLs and use the same client secret as the realm. `deploy-biar.ps1` (and `deploy-service.ps1` / `restart-service.ps1` after a repo reset on C) writes these values with `Set-BiarServiceEnvOverlay`, and stops before starting any container if either SSM parameter is missing:
+> **Hub settings on Server C.** The hub must point at the public Keycloak and hub URLs and use the same client secret as the realm. `deploy-biar.ps1` (and `deploy-service.ps1` / `restart-service.ps1` on C) renders the secrets into `biar/secrets.env` and writes the URLs into `biar/env/biar-jupyterhub.env` with `Set-BiarServiceEnvOverlay`; it stops before starting any container if either SSM parameter is missing:
 >
 > | Variable | Value |
 > |---|---|
 > | `KEYCLOAK_ISSUER_URL` | `https://keycloak.<your-zone>/realms/tazama` |
 > | `JUPYTERHUB_PUBLIC_URL` | `https://jupyter.<your-zone>` |
-> | `KEYCLOAK_CLIENT_SECRET` | SSM `/tazama/creds/jupyterhub/oidc-client-secret` |
-> | `JUPYTERHUB_CRYPT_KEY` | SSM `/tazama/creds/jupyterhub/crypt_key` (create with `aws ssm put-parameter --name /tazama/creds/jupyterhub/crypt_key --type SecureString --value (openssl rand -hex 32)`) |
+> | `KEYCLOAK_CLIENT_SECRET` | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` - SSM `/tazama/creds/jupyterhub/oidc-client-secret` |
+> | `JUPYTERHUB_CRYPT_KEY` | `TAZAMA_JUPYTERHUB_CRYPT_KEY` - SSM `/tazama/creds/jupyterhub/crypt_key` (create with `aws ssm put-parameter --name /tazama/creds/jupyterhub/crypt_key --type SecureString --value (openssl rand -hex 32)`) |
 >
 > **Native mode (`JUPYTERHUB_AUTH=native` only).** The rest of this note applies only if you switch the hub back to the native sign-up authenticator. Signup is disabled by default (`open_signup = False`). The first admin account must be created and then authorized manually:
 >
@@ -3151,26 +3049,27 @@ The deployment as provisioned out of the box has the following characteristics:
 - Access to EC2 instances requires AWS IAM credentials and EICE - there is no open port 22
 - ALB-exposed services (`nifi`, `jupyter`, `tms`, `keycloak`, etc.) sit behind HTTPS with ACM-managed certificates and Keycloak-enforced authentication at the listener rule level
 
-**Credentials (weak - requires action before beta use)**
-- All three stacks (`core/`, `extensions/`, `biar/`) were originally committed to a public GitHub repository with plaintext default passwords (`unused`, `password`, `admin123456789`, `tazama`)
-- The `-Password` deploy-script parameter covers PostgreSQL and Keycloak on Servers A and B. All other service credentials (Redis, CouchDB, TRS signing key, Hasura, NiFi, Ozone, OpenSearch, SFTP, pgAdmin, OAuth client secret, relay auth, CMS Flowable) remain at their committed defaults unless changed manually
-- On the current beta deployment, the `-Password` parameter was **not passed at deploy time** - PostgreSQL on both servers has password `unused`
+**Credentials (SSM-sourced since #298)**
+- All three stacks (`core/`, `extensions/`, `biar/`) were originally committed to a public GitHub repository with plaintext default passwords (`unused`, `password`, `admin123456789`, `tazama`). Since #298 no committed compose or env file holds a credential: every service reads its credentials from its group's `secrets.env`, which the deploy scripts render from SSM `/tazama/*` (A.7)
+- Services that apply a credential only on first initialisation (Postgres, Keycloak admin, pgAdmin, Flowable `rest-admin`) keep their stored value until it is changed in the running service (G.2)
+- Three parameters were seeded with formerly public values to match live state: `auth/client-secret`, `relay/auth-password`, `enrichment/encryption-key` (rotation follow-up)
+- Postgres A runs with trust authentication, so its password is not checked (#274)
 - NiFi runs in keycloak mode: HTTPS on :8443, Keycloak (OIDC) login, access by `NIFI_ADMIN` group membership. Its secrets come from SSM `/tazama/creds/nifi/*` (see G.2)
 
 **Other open issues**
 - OpenSearch security plugin is disabled (`DISABLE_SECURITY_PLUGIN=true`)
 - The committed test realm still contains test users with published passwords. `deploy-core.ps1` disables `nifi-admin` and `jupyter-user`; the others remain enabled
-- Ozone S3G access key and secret are both `tazama`
+- Ozone runs without security (no Kerberos), so its S3 gateway accepts any access key and secret
 
 ---
 
-### G.2 - Credential rotation (immediate priority)
+### G.2 - Credential rotation
 
-These are the credentials that need to be changed before the beta is used with any real or sensitive data. Work through each service in order.
+To rotate a credential: change the value stored by the service (only for the services below that keep it in their data), update the SSM parameter (A.7), then redeploy the consumers - `deploy.ps1 -NoPull`, or `restart-service.ps1` per service. The deploy re-renders every `secrets.env` from SSM.
 
 #### PostgreSQL - both servers
 
-The simplest approach for the current deployment is to change the password directly in the running container and patch the env files on disk.
+Postgres applies `POSTGRES_PASSWORD` only when its volume is first initialised. On a running server, change the stored password first, then the SSM parameter, then redeploy so every client gets the new value:
 
 ```powershell
 cd "tazama-stack\infra\aws\scripts"
@@ -3188,18 +3087,14 @@ Invoke-RemoteCommand -InstanceId $out.ServerA_InstanceId -Command `
 # Server B
 Invoke-RemoteCommand -InstanceId $out.ServerB_InstanceId -Command `
   "docker exec extensions-postgres psql -U postgres -c `"ALTER USER postgres PASSWORD '$pgPw'`""
+
+aws ssm put-parameter --name /tazama/creds/postgres/password --type SecureString `
+  --value $pgPw --overwrite --region ap-south-1 --profile tazama
+
+.\deploy.ps1 -NoPull
 ```
 
-Then re-run the deploy scripts with the new password so all service env files are updated:
-
-```powershell
-.\deploy-core.ps1       -Password $pgPw -NoPull
-.\deploy-extensions.ps1 -Password $pgPw -NoPull
-```
-
-> `-NoPull` skips the image pull and only patches the env files and restarts services - substantially faster than a full redeploy.
-
-**Long-term:** Store the password in SSM as `/tazama/postgres_core_password` and `/tazama/postgres_extensions_password` (see A.7 SSM commands) and pass `-Password` on every future deploy. The deploy scripts already read from SSM if the `-Password` parameter is not supplied directly.
+The password is embedded in connection URLs: no whitespace and none of `@ : / ? # % [ ] \ "` (the renderer rejects them). The same rule applies to the CouchDB username and password.
 
 ---
 
@@ -3207,9 +3102,9 @@ Then re-run the deploy scripts with the new password so all service env files ar
 
 On AWS, NiFi always runs in keycloak mode (`NIFI_AUTH=keycloak`): HTTPS on :8443, login through Keycloak, and access granted to members of the `NIFI_ADMIN` group. The ALB reaches it only through `https://nifi.<your-zone>`; there is no port listener and no tunnel. Keycloak mode **requires the custom domain** (`enable_custom_domain = true`); `deploy-biar.ps1` fails closed without it.
 
-**Step 1 - Seed the four SSM parameters** (see A.7): `/tazama/creds/nifi/oidc-client-secret`, `sensitive-props-key` (12+ characters), `keystore-password`, `truststore-password`. Values must not contain `$`, `|`, `&` or `\`. Until these exist, `deploy-core.ps1`, `deploy-biar.ps1` and `Set-ServerEnvOverlays` (A: the OIDC client secret; C: all four) stop with an error.
+**Step 1 - Seed the four SSM parameters** (see A.7): `/tazama/creds/nifi/oidc-client-secret`, `sensitive-props-key` (12+ characters), `keystore-password`, `truststore-password`. Values must not contain `$`, `|`, `&` or `\`. Until these exist, every deploy that renders `core/secrets.env` (the OIDC client secret) or `biar/secrets.env` (all four) stops with an error.
 
-**Step 2 - Keycloak realm.** A fresh realm import already contains the client and groups; `deploy-core.ps1` writes the client secret (from SSM) and the public URL into `core/.env`. On an existing realm (import is skipped), add them once with kcadm in the `keycloak` container:
+**Step 2 - Keycloak realm.** A fresh realm import already contains the client and groups; the client secret comes from `core/secrets.env` and `deploy-core.ps1` writes the public URL into `core/.env`. On an existing realm (import is skipped), add them once with kcadm in the `keycloak` container:
 
 - confidential client `nifi`, standard flow only, redirect URI `https://nifi.<your-zone>:443/nifi-api/access/oidc/callback`, secret = the SSM `oidc-client-secret` value
 - protocol mapper `realm-roles-userinfo` (realm roles -> `roles` claim in userinfo)
@@ -3239,32 +3134,24 @@ tofu plan -var-file terraform.tfvars -var-file alb.tfvars -var-file domain.tfvar
 
 #### Apache Ozone S3G
 
-```bash
-# On Server C
-sed -i 's/OZONE-SITE.XML_ozone.s3g.secret.key=.*/OZONE-SITE.XML_ozone.s3g.secret.key=<strong-secret>/' \
-  ~/tazama-stack/biar/env/ozone-docker-config
-
-# Restart s3g
-cd ~/tazama-stack/biar
-docker compose -p tazama-biar \
-  -f ./docker-compose.biar.infrastructure.yaml \
-  -f ./docker-compose.hub.biar.yaml \
-  -f ./docker-compose.utils.init.yaml \
-  restart s3g
-```
-
-Also update `S3A_ACCESS_KEY` and `S3A_SECRET_KEY` in any service that connects to Ozone (e.g. `biar/env/biar-jupyterhub.env`) to match.
+The S3 access key and secret are `TAZAMA_S3_ACCESS_KEY` / `TAZAMA_S3_SECRET_KEY` in `biar/secrets.env` (SSM `/tazama/creds/ozone/s3_access_key` and `s3_secret`), used by the orchestrator, JupyterHub, the bucket init container and a freshly imported NiFi flow. Ozone runs without security (no Kerberos), so the S3 gateway accepts any key and secret; the values only start to matter once Ozone security is enabled. NiFi keeps the keys of an already imported flow in its AWS credentials controller service - change them there if you rotate them.
 
 ---
 
-#### Remaining credentials (A.7 full SSM rollout)
+#### Remaining credentials
 
-The remaining services (Redis, CouchDB, TRS signing key, Hasura, pgAdmin, OAuth client secret, relay auth, CMS Flowable, OpenSearch) are covered by the SSM parameter table in A.7. Once all SSM parameters are populated:
+All other services (Valkey, CouchDB, Hasura, pgAdmin, auth client secret, relay auth, Flowable, OpenSearch, SFTP, Docker Hub, JupyterHub, demo) read their credentials from `secrets.env` (A.7). Rotation notes:
+
+- **Keycloak admin, pgAdmin, Flowable `rest-admin`:** applied only on first initialisation - change the password in the service first (Keycloak admin console / `kcadm.sh`, pgAdmin UI, Flowable identity REST API).
+- **Auth client secret, relay password, JupyterHub and NiFi client secrets:** change the matching realm client or user in Keycloak at the same time.
+- **CouchDB admin:** the container writes the admin from its env into a config file that is not kept on a volume. A changed value recreates the container, which applies the new admin and drops the old one. Open sessions end.
+- **Enrichment encryption key:** data the enrichment service encrypted with the old key cannot be decrypted with the new one; re-enter it after the change.
+- **SFTP password:** applied when the container is recreated, which a changed value triggers; external SFTP clients need the new value. `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` is re-derived automatically.
 
 ```powershell
-# Populate all SSM parameters (see A.7 for the full command block)
-# Then redeploy with the -Password flag to trigger the overlay across all services
-.\deploy.ps1 -Password $pgPw
+aws ssm put-parameter --name /tazama/creds/<service>/<name> --type SecureString `
+  --value '<new value>' --overwrite --region ap-south-1 --profile tazama
+.\deploy.ps1 -NoPull
 ```
 
 ---
@@ -3273,7 +3160,7 @@ The remaining services (Redis, CouchDB, TRS signing key, Hasura, pgAdmin, OAuth 
 
 See A.6. OpenSearch is currently running with `DISABLE_SECURITY_PLUGIN=true`. This is the highest-risk open item after credential rotation because OpenSearch is reachable from Server C (NiFi) and potentially accessible to any service on the private subnet without authentication.
 
-**To fix:** Remove `DISABLE_SECURITY_PLUGIN=true` from the `opensearch` service in `extensions/docker-compose.extensions.infrastructure.yaml`, set a strong password in SSM as `/tazama/opensearch_password`, and redeploy the extensions stack.
+**To fix:** Remove `DISABLE_SECURITY_PLUGIN=true` from the `opensearch` service in `extensions/docker-compose.extensions.infrastructure.yaml`, set a strong password in SSM as `/tazama/creds/opensearch/admin_password`, and redeploy the extensions stack.
 
 ---
 
@@ -3285,21 +3172,21 @@ See A.6. OpenSearch is currently running with `DISABLE_SECURITY_PLUGIN=true`. Th
 | EICE-only SSH access | ✅ Done | - |
 | ALB HTTPS with ACM certificates | ✅ Done | - |
 | ALB Keycloak authentication on listeners | ✅ Done | - |
-| PostgreSQL passwords rotated | ❌ Default (`unused`) | G.2 - rotate and store in SSM |
+| PostgreSQL passwords from SSM | ✅ Done (#298); Postgres A trust auth open | #274 - enable scram on Postgres A |
 | NiFi login enforced | ✅ Keycloak login (NIFI_ADMIN group) | - |
 | Voila notebook server auth | ❌ Public, no auth | G.4 - place behind Keycloak/OIDC proxy or restrict ALB ingress CIDR to VPN/office IPs |
 | Voila iframe CSP + mixed content | ⏳ Fix in PR #180 | Pending CMS image update ([case-management-system #92](https://github.com/tazama-lf/case-management-system/issues/92)) - env vars staged in `env-extensions.tpl` |
-| Ozone S3G credentials rotated | ❌ Default (`tazama`/`tazama`) | G.2 - rotate key/secret |
+| Ozone S3G credentials | ✅ From SSM (#298); not checked while Ozone security is off | Enable Ozone security |
 | OpenSearch security plugin enabled | ❌ Disabled | G.3 - re-enable, set password |
-| Keycloak admin password rotated | ❌ Default | A.7 - pass `-Password` at deploy |
-| Redis/Valkey password set | ❌ Default | A.7 SSM rollout |
-| CouchDB password rotated | ❌ Default | A.7 SSM rollout |
-| TRS crypto signing key set | ❌ Default | A.7 SSM rollout |
-| Hasura admin secret set | ❌ Default | A.7 SSM rollout |
-| Auth service OAuth client secret set | ❌ Default | A.7 SSM rollout |
+| Keycloak admin password | ✅ From SSM (#298) | - |
+| Redis/Valkey password set | ✅ From SSM (#298) | - |
+| CouchDB credentials | ✅ From SSM (#298) | - |
+| TRS browser crypto key | ➖ Committed by design (public browser bundle) | - |
+| Hasura admin secret set | ✅ From SSM (#298) | - |
+| Auth service OAuth client secret | ⚠️ From SSM, seeded with the formerly public value | Rotate with the realm client |
 | NiFi HTTPS port on ALB | ✅ HTTPS 8443, Keycloak login | G.2 - keycloak mode |
-| pgAdmin passwords rotated | ❌ Default | A.7 SSM rollout |
-| SFTP password rotated | ❌ Default | A.7 - requires compose change first |
+| pgAdmin passwords | ✅ From SSM (#298) | - |
+| SFTP password | ✅ From SSM (#298) | - |
 
 ---
 
@@ -3629,7 +3516,7 @@ Extracted from `tazama-core.bat`. `docker-compose.base.override.yaml` is always 
 
 **AWS beta sandbox - DockerHub images (hub):**
 ```bash
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.base.infrastructure.yaml \
   -f ./docker-compose.base.override.yaml \
   -f ./docker-compose.hub.cfg.yaml \
@@ -3645,7 +3532,7 @@ docker compose -p tazama-core \
 
 **AWS beta sandbox - GitHub source build fallback (dev):**
 ```bash
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.base.infrastructure.yaml \
   -f ./docker-compose.base.override.yaml \
   -f ./docker-compose.dev.cfg.yaml \

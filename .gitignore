@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
+# Credentials (see README section 6) - never commit; the templates are committed
+**/secrets.env
+
 # AWS deployment - private key and operator-specific values; never commit
 infra/aws/*.pem
 infra/aws/terraform.tfvars
