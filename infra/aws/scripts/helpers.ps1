@@ -11,12 +11,12 @@
       - Invoke-RemoteCommand - SSH to an EC2 instance via EICE ProxyCommand
       - Copy-ToRemote        - SCP a file to an EC2 instance via EICE
       - Set-RemoteEnvOverlay - apply KEY=VALUE overlay to a remote .env file
-      - Set-DemoUiOverlay    - apply tazama-demo public URL + SSM NEXTAUTH_SECRET
-      - Set-JupyterHubOidcOverlay - apply JupyterHub public URL + SSM OIDC client secret for the Keycloak realm import
-      - Set-NifiOidcOverlay  - apply NiFi public URL + SSM OIDC client secret for the Keycloak realm import
-      - Set-NifiAuthOverlay  - switch biar-nifi to keycloak mode with SSM secrets (Server C)
-      - Set-BiarServiceEnvOverlay - apply JupyterHub OIDC + CouchDB settings to biar service env files (Server C)
-      - Set-SmtpOverlay      - apply CMS SMTP credentials from SSM
+      - Set-ServerSecretsEnv - render a component group's secrets.env from SSM
+      - Set-DemoUiOverlay    - apply the tazama-demo public URL
+      - Set-JupyterHubOidcOverlay - apply the JupyterHub public URL for the Keycloak realm import
+      - Set-NifiOidcOverlay  - apply the NiFi public URL for the Keycloak realm import
+      - Set-NifiAuthOverlay  - switch biar-nifi to keycloak mode (Server C)
+      - Set-BiarServiceEnvOverlay - apply the public Keycloak / JupyterHub URLs to biar-jupyterhub.env (Server C)
       - Set-ServerEnvOverlays - re-apply a server's full per-server AWS env overlays
       - Wait-Bootstrap       - poll until the bootstrap script has completed
 #>
@@ -213,10 +213,10 @@ function Set-RemoteEnvOverlay {
 
 # -- Set-DemoUiOverlay --------------------------------------------------------
 # When a custom domain is active, point the tazama-demo UI at its public HTTPS
-# URL and source NEXTAUTH_SECRET from SSM. Both are written to core/.env; the
-# demo service (docker-compose.base.auth.yaml) consumes them via
-# ${DEMO_PUBLIC_URL} / ${DEMO_NEXTAUTH_SECRET} interpolation. Without this the
-# committed localhost defaults apply (correct for local dev only).
+# URL. Written to core/.env; the demo service (docker-compose.base.auth.yaml)
+# consumes it via ${DEMO_PUBLIC_URL} interpolation. Without this the committed
+# localhost default applies (correct for local dev only). The NextAuth secret
+# comes from core/secrets.env (see Set-ServerSecretsEnv).
 #
 # No-op when $DemoPublicUrl is empty (custom domain not enabled). Shared by
 # deploy-core.ps1, deploy-service.ps1 and restart-service.ps1 so the demo env
@@ -230,35 +230,19 @@ function Set-DemoUiOverlay {
 
     if (-not $DemoPublicUrl) { return }
 
-    Write-Host "[$ServerLabel] Applying demo UI overlay (public URL + NEXTAUTH_SECRET from SSM)..."
-    $demoOverlay = "DEMO_PUBLIC_URL=$DemoPublicUrl"
-    $demoSecret = aws ssm get-parameter `
-        --name /tazama/nextauth_secret `
-        --with-decryption `
-        --region $Script:AwsRegion `
-        --profile $Script:AwsProfile `
-        --query Parameter.Value `
-        --output text 2>$null
-    if ($LASTEXITCODE -eq 0 -and $demoSecret) {
-        $demoOverlay += "`nDEMO_NEXTAUTH_SECRET=$demoSecret"
-    } else {
-        # Blank the key so a stale secret from an earlier run cannot survive;
-        # compose ${DEMO_NEXTAUTH_SECRET:-...} treats empty as unset.
-        $demoOverlay += "`nDEMO_NEXTAUTH_SECRET="
-        Write-Warning "[$ServerLabel] /tazama/nextauth_secret not found in SSM - demo UI falls back to the committed test secret. Set it with: aws ssm put-parameter --name /tazama/nextauth_secret --type SecureString --value <openssl rand -base64 32>"
-    }
+    Write-Host "[$ServerLabel] Applying demo UI overlay (public URL)..."
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
-        -OverlayContent $demoOverlay `
+        -OverlayContent "DEMO_PUBLIC_URL=$DemoPublicUrl" `
         -RemoteEnvFile "$Script:RemoteRepo/core/.env"
     Write-Host "[$ServerLabel] Demo UI overlay applied." -ForegroundColor Green
 }
 
 # -- Set-JupyterHubOidcOverlay ------------------------------------------------
-# When a custom domain is active, give Keycloak the JupyterHub public URL and
-# the OIDC client secret from SSM. Both are written to core/.env; the keycloak
-# service (docker-compose.base.auth.yaml) passes them into the container, where
-# the realm import resolves the jupyterhub client's placeholders
-# (${JUPYTERHUB_PUBLIC_URL:...} redirect/web origin, ${JUPYTERHUB_OIDC_CLIENT_SECRET:...}).
+# When a custom domain is active, give Keycloak the JupyterHub public URL.
+# Written to core/.env; the keycloak service (docker-compose.base.auth.yaml)
+# passes it into the container, where the realm import resolves the jupyterhub
+# client's ${JUPYTERHUB_PUBLIC_URL:...} redirect/web origin placeholders. The
+# client secret comes from core/secrets.env (see Set-ServerSecretsEnv).
 # Only takes effect on a fresh realm import (KEYCLOAK_IMPORT_STRATEGY=IGNORE_EXISTING).
 # The hub side (biar-jupyterhub.env on Server C) is configured separately.
 #
@@ -272,35 +256,19 @@ function Set-JupyterHubOidcOverlay {
 
     if (-not $JupyterPublicUrl) { return }
 
-    Write-Host "[$ServerLabel] Applying JupyterHub OIDC overlay (public URL + client secret from SSM)..."
-    $jhOverlay = "JUPYTERHUB_PUBLIC_URL=$JupyterPublicUrl"
-    $jhSecret = aws ssm get-parameter `
-        --name /tazama/creds/jupyterhub/oidc-client-secret `
-        --with-decryption `
-        --region $Script:AwsRegion `
-        --profile $Script:AwsProfile `
-        --query Parameter.Value `
-        --output text 2>$null
-    if ($LASTEXITCODE -eq 0 -and $jhSecret) {
-        $jhOverlay += "`nJUPYTERHUB_OIDC_CLIENT_SECRET=$jhSecret"
-    } else {
-        # Blank the key so a stale secret from an earlier run cannot survive;
-        # compose ${JUPYTERHUB_OIDC_CLIENT_SECRET:-...} treats empty as unset.
-        $jhOverlay += "`nJUPYTERHUB_OIDC_CLIENT_SECRET="
-        Write-Warning "[$ServerLabel] /tazama/creds/jupyterhub/oidc-client-secret not found in SSM - a fresh realm import uses the committed test secret. Set it with: aws ssm put-parameter --name /tazama/creds/jupyterhub/oidc-client-secret --type SecureString --value <openssl rand -hex 32>"
-    }
+    Write-Host "[$ServerLabel] Applying JupyterHub OIDC overlay (public URL)..."
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
-        -OverlayContent $jhOverlay `
+        -OverlayContent "JUPYTERHUB_PUBLIC_URL=$JupyterPublicUrl" `
         -RemoteEnvFile "$Script:RemoteRepo/core/.env"
     Write-Host "[$ServerLabel] JupyterHub OIDC overlay applied." -ForegroundColor Green
 }
 
 # -- Set-NifiOidcOverlay ------------------------------------------------------
-# When a custom domain is active, give Keycloak the NiFi public URL and the
-# OIDC client secret from SSM. Both are written to core/.env; the keycloak
-# service (docker-compose.base.auth.yaml) passes them into the container, where
-# the realm import resolves the nifi client's placeholders
-# (${NIFI_PUBLIC_URL:...} redirect URI, ${TAZAMA_NIFI_OIDC_CLIENT_SECRET:...}).
+# When a custom domain is active, give Keycloak the NiFi public URL. Written to
+# core/.env; the keycloak service (docker-compose.base.auth.yaml) passes it into
+# the container, where the realm import resolves the nifi client's
+# ${NIFI_PUBLIC_URL:...} redirect URI placeholder. The client secret comes from
+# core/secrets.env (see Set-ServerSecretsEnv).
 # Only takes effect on a fresh realm import (KEYCLOAK_IMPORT_STRATEGY=IGNORE_EXISTING).
 #
 # NIFI_PUBLIC_URL carries an explicit :443 - behind the ALB, NiFi builds its
@@ -308,8 +276,7 @@ function Set-JupyterHubOidcOverlay {
 # which must match the registered redirect URI exactly.
 # The NiFi side (biar/.env on Server C) is configured by Set-NifiAuthOverlay.
 #
-# Throws when the SSM parameter is missing. No-op when $NifiPublicUrl is empty
-# (custom domain not enabled).
+# No-op when $NifiPublicUrl is empty (custom domain not enabled).
 function Set-NifiOidcOverlay {
     param(
         [string]$InstanceId,
@@ -319,24 +286,9 @@ function Set-NifiOidcOverlay {
 
     if (-not $NifiPublicUrl) { return }
 
-    Write-Host "[$ServerLabel] Applying NiFi OIDC overlay (public URL + client secret from SSM)..."
-    $nifiOverlay = "NIFI_PUBLIC_URL=${NifiPublicUrl}:443"
-    $nifiSecret = aws ssm get-parameter `
-        --name /tazama/creds/nifi/oidc-client-secret `
-        --with-decryption `
-        --region $Script:AwsRegion `
-        --profile $Script:AwsProfile `
-        --query Parameter.Value `
-        --output text 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $nifiSecret) {
-        # Fail closed: a fresh realm import would otherwise register the nifi
-        # client with the committed test secret, and IGNORE_EXISTING keeps it
-        # there even after the parameter is seeded.
-        throw "[$ServerLabel] /tazama/creds/nifi/oidc-client-secret not found in SSM. Seed it first: aws ssm put-parameter --name /tazama/creds/nifi/oidc-client-secret --type SecureString --value <openssl rand -hex 32> (see aws-deployment-instructions.md G.2)"
-    }
-    $nifiOverlay += "`nTAZAMA_NIFI_OIDC_CLIENT_SECRET=$nifiSecret"
+    Write-Host "[$ServerLabel] Applying NiFi OIDC overlay (public URL)..."
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
-        -OverlayContent $nifiOverlay `
+        -OverlayContent "NIFI_PUBLIC_URL=${NifiPublicUrl}:443" `
         -RemoteEnvFile "$Script:RemoteRepo/core/.env"
     Write-Host "[$ServerLabel] NiFi OIDC overlay applied." -ForegroundColor Green
 }
@@ -345,16 +297,15 @@ function Set-NifiOidcOverlay {
 # Switch biar-nifi on Server C to keycloak mode: HTTPS on 8443 behind the ALB
 # host rule (nifi.<domain>), OIDC login against the realm's nifi client. Writes
 # to biar/.env, which the biar-nifi compose service interpolates into its
-# environment (NIFI_AUTH, KEYCLOAK_*, NIFI_WEB_PROXY_HOST, TAZAMA_NIFI_*).
+# environment (NIFI_AUTH, KEYCLOAK_*, NIFI_WEB_PROXY_HOST). The four NiFi
+# secrets come from biar/secrets.env (see Set-ServerSecretsEnv).
 #
 # NIFI_WEB_PROXY_HOST lists the public host (with and without :443) and
 # <ServerC_PrivateIp>:8443, the Host header the ALB health check sends.
 #
-# Refuses (throws) rather than blanking when the custom domain or any of the
-# four SSM parameters is missing: keycloak mode cannot start without them, and
-# falling back to none mode would leave NiFi without an ALB path anyway.
-# Values are generated secrets; '$' (compose interpolation) and | & \ (NiFi's
-# sed-based property substitution) are rejected.
+# Refuses (throws) when the custom domain is missing: keycloak mode cannot
+# start without it, and falling back to none mode would leave NiFi without an
+# ALB path anyway.
 function Set-NifiAuthOverlay {
     param(
         [string]$InstanceId,
@@ -366,43 +317,14 @@ function Set-NifiAuthOverlay {
         throw "[$ServerLabel] NiFi keycloak mode needs the custom domain (tofu outputs nifi_public_url / keycloak_hostname are empty). Enable enable_custom_domain and re-apply tofu first."
     }
 
-    $params = [ordered]@{
-        TAZAMA_NIFI_OIDC_CLIENT_SECRET  = 'oidc-client-secret'
-        TAZAMA_NIFI_SENSITIVE_PROPS_KEY = 'sensitive-props-key'
-        TAZAMA_NIFI_KEYSTORE_PASSWORD   = 'keystore-password'
-        TAZAMA_NIFI_TRUSTSTORE_PASSWORD = 'truststore-password'
-    }
-    $secrets = [ordered]@{}
-    foreach ($key in $params.Keys) {
-        $name = "/tazama/creds/nifi/$($params[$key])"
-        $value = aws ssm get-parameter `
-            --name $name `
-            --with-decryption `
-            --region $Script:AwsRegion `
-            --profile $Script:AwsProfile `
-            --query Parameter.Value `
-            --output text 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $value) {
-            throw "[$ServerLabel] SSM parameter $name not found - refusing to deploy NiFi. Seed all four /tazama/creds/nifi/* parameters first (aws ssm put-parameter --name $name --type SecureString --value <openssl rand -hex 32>)."
-        }
-        if ($value -match '[$|&\\]') {
-            throw "[$ServerLabel] SSM parameter $name contains one of the characters `$ | & \ - not supported. Use a hex value (openssl rand -hex 32)."
-        }
-        $secrets[$key] = $value
-    }
-    if ($secrets.TAZAMA_NIFI_SENSITIVE_PROPS_KEY.Length -lt 12) {
-        throw "[$ServerLabel] /tazama/creds/nifi/sensitive-props-key must be at least 12 characters."
-    }
-
     $nifiHost = ([uri]$TofuOutputs.NifiPublicUrl).Host
     $overlay = @(
         'NIFI_AUTH=keycloak'
         "NIFI_KEYCLOAK_ISSUER_URL=https://$($TofuOutputs.KeycloakHostname)/realms/tazama"
         "NIFI_WEB_PROXY_HOST=$nifiHost,${nifiHost}:443,$($TofuOutputs.ServerC_PrivateIp):8443"
     )
-    foreach ($key in $secrets.Keys) { $overlay += "$key=$($secrets[$key])" }
 
-    Write-Host "[$ServerLabel] Applying NiFi auth overlay (keycloak mode, secrets from SSM)..."
+    Write-Host "[$ServerLabel] Applying NiFi auth overlay (keycloak mode)..."
     Set-RemoteEnvOverlay -InstanceId $InstanceId `
         -OverlayContent ($overlay -join "`n") `
         -RemoteEnvFile "$Script:RemoteRepo/biar/.env"
@@ -410,24 +332,13 @@ function Set-NifiAuthOverlay {
 }
 
 # -- Set-BiarServiceEnvOverlay ------------------------------------------------
-# Apply the AWS values to the Server C service env files that a
-# 'git reset --hard' restores to their local-dev defaults:
-#   biar/env/biar-jupyterhub.env
-#     KEYCLOAK_ISSUER_URL, JUPYTERHUB_PUBLIC_URL - from the tofu outputs
-#     KEYCLOAK_CLIENT_SECRET - SSM /tazama/creds/jupyterhub/oidc-client-secret
-#       (the same secret Set-JupyterHubOidcOverlay gives the realm import)
-#     JUPYTERHUB_CRYPT_KEY   - SSM /tazama/creds/jupyterhub/crypt_key
-#   biar/env/biar-unstructured-pipeline.env
-#     COUCHDB_URL - user simon on Server B, password from SSM
-#       /tazama/creds/couchdb/password
+# Apply the public Keycloak / JupyterHub URLs to biar/env/biar-jupyterhub.env
+# on Server C, which a 'git reset --hard' restores to its localhost defaults:
+#   KEYCLOAK_ISSUER_URL, JUPYTERHUB_PUBLIC_URL - from the tofu outputs
+# The JupyterHub client secret and crypt key, and the CouchDB account of the
+# unstructured pipeline, come from biar/secrets.env (see Set-ServerSecretsEnv).
 #
-# Compose interpolates env_file values, so every '$' is written as '$$'.
-# All SSM reads happen before any file is written.
-# JupyterHub: skipped with a warning when no custom domain is active; throws
-# when either SSM parameter is missing (the hub would otherwise start with the
-# committed test secret and crypt key).
-# CouchDB: warns and keeps the committed value when the parameter is missing;
-# throws when the password contains @ : / ? # % (they would break the URL).
+# Skipped with a warning when no custom domain is active.
 function Set-BiarServiceEnvOverlay {
     param(
         [string]$InstanceId,
@@ -435,141 +346,215 @@ function Set-BiarServiceEnvOverlay {
         [string]$ServerLabel = 'Server C'
     )
 
-    $jhOverlay = $null
     if (-not $TofuOutputs.JupyterPublicUrl -or -not $TofuOutputs.KeycloakHostname) {
         Write-Warning "[$ServerLabel] No custom domain (tofu outputs jupyter_public_url / keycloak_hostname are empty) - biar-jupyterhub.env keeps its local defaults."
-    } else {
-        $jhLines = @(
-            "KEYCLOAK_ISSUER_URL=https://$($TofuOutputs.KeycloakHostname)/realms/tazama"
-            "JUPYTERHUB_PUBLIC_URL=$($TofuOutputs.JupyterPublicUrl)"
-        )
-        $jhParams = [ordered]@{
-            KEYCLOAK_CLIENT_SECRET = '/tazama/creds/jupyterhub/oidc-client-secret'
-            JUPYTERHUB_CRYPT_KEY   = '/tazama/creds/jupyterhub/crypt_key'
-        }
-        foreach ($key in $jhParams.Keys) {
-            $name = $jhParams[$key]
-            $value = aws ssm get-parameter `
-                --name $name `
-                --with-decryption `
-                --region $Script:AwsRegion `
-                --profile $Script:AwsProfile `
-                --query Parameter.Value `
-                --output text 2>$null
-            if ($LASTEXITCODE -ne 0 -or -not $value) {
-                throw "[$ServerLabel] SSM parameter $name not found - refusing to deploy JupyterHub with the committed test values. Seed it first: aws ssm put-parameter --name $name --type SecureString --value <openssl rand -hex 32>"
-            }
-            $jhLines += "$key=$($value -replace '\$', '$$$$')"
-        }
-        $jhOverlay = $jhLines -join "`n"
+        return
     }
 
-    $couchOverlay = $null
-    $couchPass = aws ssm get-parameter `
-        --name /tazama/creds/couchdb/password `
-        --with-decryption `
-        --region $Script:AwsRegion `
-        --profile $Script:AwsProfile `
-        --query Parameter.Value `
-        --output text 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $couchPass) {
-        Write-Warning "[$ServerLabel] /tazama/creds/couchdb/password not found in SSM - biar-unstructured-pipeline keeps the committed COUCHDB_URL (local default password)."
-    } elseif ($couchPass -match '[@:/?#%\s\[\]\\]') {
-        throw "[$ServerLabel] /tazama/creds/couchdb/password contains whitespace or one of the characters @ : / ? # % [ ] \ - not supported in COUCHDB_URL."
-    } else {
-        $couchOverlay = "COUCHDB_URL=http://simon:$($couchPass -replace '\$', '$$$$')@extensions.tazama.internal:5984/cms-evidence"
-    }
+    $jhOverlay = @(
+        "KEYCLOAK_ISSUER_URL=https://$($TofuOutputs.KeycloakHostname)/realms/tazama"
+        "JUPYTERHUB_PUBLIC_URL=$($TofuOutputs.JupyterPublicUrl)"
+    ) -join "`n"
 
-    Write-Host "[$ServerLabel] Applying biar service env overlay (JupyterHub + CouchDB, secrets from SSM)..."
-    if ($jhOverlay) {
-        Set-RemoteEnvOverlay -InstanceId $InstanceId `
-            -OverlayContent $jhOverlay `
-            -RemoteEnvFile "$Script:RemoteRepo/biar/env/biar-jupyterhub.env"
-    }
-    if ($couchOverlay) {
-        Set-RemoteEnvOverlay -InstanceId $InstanceId `
-            -OverlayContent $couchOverlay `
-            -RemoteEnvFile "$Script:RemoteRepo/biar/env/biar-unstructured-pipeline.env"
-    }
+    Write-Host "[$ServerLabel] Applying biar service env overlay (JupyterHub URLs)..."
+    Set-RemoteEnvOverlay -InstanceId $InstanceId `
+        -OverlayContent $jhOverlay `
+        -RemoteEnvFile "$Script:RemoteRepo/biar/env/biar-jupyterhub.env"
     Write-Host "[$ServerLabel] biar service env overlay applied." -ForegroundColor Green
 }
 
-# -- Set-SmtpOverlay ----------------------------------------------------------
-# Inject the CMS email credentials from SSM (/tazama/smtp_user, /tazama/smtp_pass)
-# into extensions/.env on Server B. The committed case-management-system.env
-# references them via ${SMTP_USER:-} / ${SMTP_PASS:-} interpolation, so no
-# secret ever lives in the repo. When the SSM parameters are absent the vars
-# are explicitly blanked (not left untouched) so stale credentials from a
-# previous overlay run cannot survive in extensions/.env; the CMS backend then
-# starts with email sending disabled.
-function Set-SmtpOverlay {
+# -- Set-ServerSecretsEnv -----------------------------------------------------
+# Render <Group>/secrets.env on a server from SSM (#298). The compose and env
+# files of each component group reference their secrets as ${TAZAMA_*}; every
+# compose call in these scripts passes `--env-file .env --env-file secrets.env`.
+# secrets.env is gitignored, so 'git reset --hard' leaves it in place.
+#
+# The key list comes from the committed <Group>/secrets.env.template of the
+# local checkout. Every template key must have an entry in
+# $Script:SecretsSsmMap, so a new key cannot go silently missing on AWS. All
+# SSM reads and checks happen before the file is written:
+#   - required key ([required] in the template, or listed in
+#     $Script:SecretsAwsRequired) whose parameter is missing or empty: throw;
+#   - optional key whose parameter is missing: written empty (listed in one
+#     info line, so a misspelled SSM name is visible).
+# Values are written single-quoted (KEY='value'). Compose reads single-quoted
+# dotenv values literally, so '$' needs no escaping. Value rules:
+#   - no single quote, CR or LF (all keys);
+#   - URL-embedded keys ($Script:SecretsUrlKeys): no whitespace and none of
+#     @ : / ? # % [ ] \ " (they would break the URL userinfo);
+#   - TAZAMA_SFTP_PASSWORD: at most 15 bytes (connection-studio
+#     decrypts longer values incorrectly);
+#   - TAZAMA_NIFI_*: none of $ | & \ (NiFi's sed-based property substitution);
+#     the sensitive-props key needs at least 12 characters;
+#   - TAZAMA_ENRICHMENT_ENCRYPTION_KEY: exactly 32 bytes (AES-256 key).
+# TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED and TAZAMA_SFTP_PASSWORD_HASH are derived
+# locally from the SFTP password and the enrichment key (see
+# Get-TcsSftpCiphertext and Get-SftpPasswordHash in
+# utils/sftp-derived-secrets.ps1, shared with the extensions launcher).
+# The content is piped over ssh stdin (no secret on any command line) and
+# written with mode 600. No value is ever printed.
+$Script:SecretsSsmMap = [ordered]@{
+    TAZAMA_CORE_PG_PASSWORD              = '/tazama/creds/postgres/password'
+    TAZAMA_EXT_PG_PASSWORD               = '/tazama/creds/postgres/password'
+    TAZAMA_VALKEY_PASSWORD               = '/tazama/creds/valkey/password'
+    TAZAMA_KEYCLOAK_ADMIN_PASSWORD       = '/tazama/creds/keycloak/admin_password'
+    TAZAMA_AUTH_CLIENT_SECRET            = '/tazama/creds/auth/client-secret'
+    TAZAMA_RELAY_AUTH_PASSWORD           = '/tazama/creds/relay/auth-password'
+    TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET = '/tazama/creds/jupyterhub/oidc-client-secret'
+    TAZAMA_JUPYTERHUB_CRYPT_KEY          = '/tazama/creds/jupyterhub/crypt_key'
+    TAZAMA_NIFI_OIDC_CLIENT_SECRET       = '/tazama/creds/nifi/oidc-client-secret'
+    TAZAMA_NIFI_SENSITIVE_PROPS_KEY      = '/tazama/creds/nifi/sensitive-props-key'
+    TAZAMA_NIFI_KEYSTORE_PASSWORD        = '/tazama/creds/nifi/keystore-password'
+    TAZAMA_NIFI_TRUSTSTORE_PASSWORD      = '/tazama/creds/nifi/truststore-password'
+    TAZAMA_DEMO_NEXTAUTH_SECRET          = '/tazama/nextauth_secret'
+    TAZAMA_HASURA_ADMIN_SECRET           = '/tazama/creds/hasura/admin_secret'
+    TAZAMA_PGADMIN_PASSWORD              = '/tazama/creds/pgadmin/password'
+    TAZAMA_APM_SECRET_TOKEN              = '/tazama/creds/apm/secret-token'
+    TAZAMA_SFTP_PASSWORD                 = '/tazama/creds/sftp/password'
+    TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED   = $null   # derived, see Get-TcsSftpCiphertext
+    TAZAMA_SFTP_PASSWORD_HASH            = $null   # derived, see Get-SftpPasswordHash
+    TAZAMA_ENRICHMENT_ENCRYPTION_KEY     = '/tazama/creds/enrichment/encryption-key'
+    TAZAMA_FLOWABLE_PASSWORD             = '/tazama/creds/flowable/password'
+    TAZAMA_OPENSEARCH_PASSWORD           = '/tazama/creds/opensearch/admin_password'
+    TAZAMA_COUCHDB_USERNAME              = '/tazama/creds/couchdb/username'
+    TAZAMA_COUCHDB_PASSWORD              = '/tazama/creds/couchdb/password'
+    TAZAMA_COUCHDB_COOKIE_SECRET         = '/tazama/creds/couchdb/cookie-secret'
+    TAZAMA_DOCKERHUB_USERNAME            = '/tazama/creds/dockerhub/username'
+    TAZAMA_DOCKERHUB_TOKEN               = '/tazama/creds/dockerhub/token'
+    TAZAMA_SMTP_USER                     = '/tazama/creds/smtp/user'
+    TAZAMA_SMTP_PASS                     = '/tazama/creds/smtp/password'
+    TAZAMA_S3_ACCESS_KEY                 = '/tazama/creds/ozone/s3_access_key'
+    TAZAMA_S3_SECRET_KEY                 = '/tazama/creds/ozone/s3_secret'
+}
+# Optional in the template (local NIFI_AUTH=none needs none of them), but AWS
+# always runs NiFi in keycloak mode (Set-NifiAuthOverlay).
+$Script:SecretsAwsRequired = @(
+    'TAZAMA_NIFI_OIDC_CLIENT_SECRET'
+    'TAZAMA_NIFI_SENSITIVE_PROPS_KEY'
+    'TAZAMA_NIFI_KEYSTORE_PASSWORD'
+    'TAZAMA_NIFI_TRUSTSTORE_PASSWORD'
+)
+$Script:SecretsUrlKeys = @(
+    'TAZAMA_CORE_PG_PASSWORD'
+    'TAZAMA_EXT_PG_PASSWORD'
+    'TAZAMA_COUCHDB_USERNAME'
+    'TAZAMA_COUCHDB_PASSWORD'
+)
+
+# Get-TcsSftpCiphertext and Get-SftpPasswordHash: deterministic derivations of
+# the two SFTP values, shared with the extensions launcher (#302), so a value
+# only changes when an input changes and no container is recreated on every
+# deploy.
+. (Join-Path $PSScriptRoot '..\..\..\utils\sftp-derived-secrets.ps1')
+
+function Set-ServerSecretsEnv {
     param(
-        [string]$InstanceId,
-        [string]$ServerLabel = 'Server B'
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][ValidateSet('core', 'extensions', 'biar')][string]$Group,
+        [string]$ServerLabel = 'server'
     )
 
-    # On any SSM failure, blank both vars rather than returning early: the env
-    # file may still hold values from a previous successful run. Note this only
-    # cleans the file - already-running containers keep their env until the
-    # calling deploy script recreates them (docker compose up -d), which every
-    # caller does after applying overlays.
-    $blankOverlay = "SMTP_USER=`nSMTP_PASS="
-
-    $smtpUser = aws ssm get-parameter `
-        --name /tazama/smtp_user `
-        --with-decryption `
-        --region $Script:AwsRegion `
-        --profile $Script:AwsProfile `
-        --query Parameter.Value `
-        --output text 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $smtpUser) {
-        Write-Warning "[$ServerLabel] /tazama/smtp_user not found in SSM - clearing SMTP vars, CMS email sending disabled. Set with: aws ssm put-parameter --name /tazama/smtp_user --type SecureString --value <address> (and /tazama/smtp_pass)."
-        Set-RemoteEnvOverlay -InstanceId $InstanceId `
-            -OverlayContent $blankOverlay `
-            -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
-        return
+    # Template keys and their [required]/[optional]/[generated] tag: the last
+    # tag in a comment applies to the KEY= lines that follow. [generated] keys
+    # are derived below.
+    $templatePath = Join-Path $PSScriptRoot "..\..\..\$Group\secrets.env.template"
+    $keys = [ordered]@{}
+    $tag = 'required'
+    foreach ($line in Get-Content $templatePath) {
+        if ($line -match '^\s*#') {
+            $tags = [regex]::Matches($line, '\[(required|optional|generated)\]')
+            if ($tags.Count) { $tag = $tags[$tags.Count - 1].Groups[1].Value }
+        } elseif ($line -match '^\s*(TAZAMA_\w+)=') {
+            $keys[$Matches[1]] = ($tag -ne 'optional') -or ($Script:SecretsAwsRequired -contains $Matches[1])
+        }
     }
-    $smtpPass = aws ssm get-parameter `
-        --name /tazama/smtp_pass `
-        --with-decryption `
-        --region $Script:AwsRegion `
-        --profile $Script:AwsProfile `
-        --query Parameter.Value `
-        --output text 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $smtpPass) {
-        Write-Warning "[$ServerLabel] /tazama/smtp_pass not found in SSM - clearing SMTP vars, CMS email sending disabled."
-        Set-RemoteEnvOverlay -InstanceId $InstanceId `
-            -OverlayContent $blankOverlay `
-            -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
-        return
+    $unmapped = @($keys.Keys | Where-Object { -not $Script:SecretsSsmMap.Contains($_) })
+    if ($unmapped) {
+        throw "[$ServerLabel] $Group/secrets.env.template has keys without an SSM mapping in helpers.ps1 (`$Script:SecretsSsmMap): $($unmapped -join ', ')"
     }
 
-    Write-Host "[$ServerLabel] Applying SMTP overlay (credentials from SSM)..."
-    Set-RemoteEnvOverlay -InstanceId $InstanceId `
-        -OverlayContent "SMTP_USER=$smtpUser`nSMTP_PASS=$smtpPass" `
-        -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
-    Write-Host "[$ServerLabel] SMTP overlay applied." -ForegroundColor Green
+    # Batched SSM read (get-parameters takes at most 10 names per call).
+    $names = @($keys.Keys | ForEach-Object { $Script:SecretsSsmMap[$_] } | Where-Object { $_ } | Sort-Object -Unique)
+    $ssm = @{}
+    for ($i = 0; $i -lt $names.Count; $i += 10) {
+        $batch = $names[$i..([Math]::Min($i + 9, $names.Count - 1))]
+        $json = aws ssm get-parameters --names $batch --with-decryption `
+            --region $Script:AwsRegion --profile $Script:AwsProfile --output json
+        if ($LASTEXITCODE -ne 0) { throw "[$ServerLabel] aws ssm get-parameters failed (exit $LASTEXITCODE)." }
+        foreach ($p in (($json -join "`n") | ConvertFrom-Json).Parameters) { $ssm[$p.Name] = $p.Value }
+    }
+
+    $values = [ordered]@{}
+    $absentOptional = @()
+    foreach ($key in $keys.Keys) {
+        $name = $Script:SecretsSsmMap[$key]
+        if (-not $name) { continue }   # derived below
+        $v = if ($ssm.ContainsKey($name)) { $ssm[$name] } else { '' }
+        if (-not $ssm.ContainsKey($name) -and -not $keys[$key]) { $absentOptional += "$key ($name)" }
+        if (-not $v -and $keys[$key]) {
+            throw "[$ServerLabel] $key ($Group/secrets.env): SSM parameter $name is missing or empty. Seed it first: aws ssm put-parameter --name $name --type SecureString --value <value> (see aws-deployment-instructions.md)."
+        }
+        $where = "[$ServerLabel] $key (SSM $name)"
+        if ($v -match "['\r\n]") { throw "$where contains a single quote or a line break - not supported." }
+        if ($Script:SecretsUrlKeys -contains $key -and $v -match '[\s@:/?#%\[\]\\"]') {
+            throw "$where contains whitespace or one of @ : / ? # % [ ] \ "" - not supported in a connection URL."
+        }
+        if ($key -eq 'TAZAMA_SFTP_PASSWORD' -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ge 16) { throw "$where must be at most 15 bytes - connection-studio decrypts longer values incorrectly." }
+        if ($key -like 'TAZAMA_NIFI_*' -and $v -match '[$|&\\]') { throw "$where contains one of `$ | & \ - not supported by NiFi. Use a hex value (openssl rand -hex 32)." }
+        if ($key -eq 'TAZAMA_NIFI_SENSITIVE_PROPS_KEY' -and $v -and $v.Length -lt 12) { throw "$where must be at least 12 characters." }
+        if ($key -eq 'TAZAMA_ENRICHMENT_ENCRYPTION_KEY' -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ne 32) { throw "$where must be exactly 32 bytes (AES-256 key)." }
+        $values[$key] = $v
+    }
+    if ($absentOptional) {
+        Write-Host "[$ServerLabel] Optional secrets not in SSM (rendered empty): $($absentOptional -join ', ')"
+    }
+    if ($keys.Contains('TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED')) {
+        $values['TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED'] = Get-TcsSftpCiphertext `
+            -Password $values['TAZAMA_SFTP_PASSWORD'] -Key $values['TAZAMA_ENRICHMENT_ENCRYPTION_KEY']
+    }
+    if ($keys.Contains('TAZAMA_SFTP_PASSWORD_HASH')) {
+        $values['TAZAMA_SFTP_PASSWORD_HASH'] = Get-SftpPasswordHash `
+            -Password $values['TAZAMA_SFTP_PASSWORD'] -Key $values['TAZAMA_ENRICHMENT_ENCRYPTION_KEY']
+    }
+
+    $lines = @(
+        '# Rendered from SSM /tazama/* by infra/aws/scripts/helpers.ps1 (Set-ServerSecretsEnv).'
+        '# Do not edit: every deploy overwrites this file. Change the SSM parameter instead.'
+    )
+    foreach ($key in $keys.Keys) { $lines += "$key='$($values[$key])'" }
+    $content = ($lines -join "`n") + "`n"
+
+    Write-Host "[$ServerLabel] Writing $Group/secrets.env ($($keys.Count) keys from SSM)..."
+    $dir = "$Script:RemoteRepo/$Group"
+    $remoteCmd = "umask 077 && tr -d '\r' > $dir/secrets.env.tmp && mv -f $dir/secrets.env.tmp $dir/secrets.env"
+    $cfg = New-SshConfig $InstanceId
+    try {
+        $content | ssh -q -F $cfg $InstanceId $remoteCmd
+        if ($LASTEXITCODE -ne 0) { throw "[$ServerLabel] Writing $Group/secrets.env failed (exit $LASTEXITCODE)." }
+    }
+    finally {
+        Remove-Item $cfg -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "[$ServerLabel] $Group/secrets.env written." -ForegroundColor Green
 }
 
 # -- Set-ServerEnvOverlays ----------------------------------------------------
-# Re-apply the per-server AWS env overlays that must not be committed. A
-# 'git reset --hard' on the target server restores the repo's committed
-# (local-dev) defaults; this function restores the AWS-specific values:
-#   Server A : extensions/.env (host names, public API URLs, CORS) unless
+# Re-apply the per-server AWS env overlays that must not be committed, and
+# render the server's secrets.env files from SSM (see Set-ServerSecretsEnv -
+# throws when a required SSM parameter is missing). A 'git reset --hard' on
+# the target server restores the repo's committed (local-dev) defaults; this
+# function restores the AWS-specific values:
+#   Server A : core/secrets.env, and extensions/secrets.env + extensions/.env
+#              (host names, public API URLs, CORS) unless
 #              -SkipExtensionsOverlay; KEYCLOAK_HOSTNAME in core/.env; strips
-#              KC_HOSTNAME_PORT from keycloak.env; and the tazama-demo public
-#              URL + NEXTAUTH_SECRET (see Set-DemoUiOverlay); the JupyterHub
-#              public URL + OIDC client secret (see Set-JupyterHubOidcOverlay);
-#              the NiFi public URL + OIDC client secret (see Set-NifiOidcOverlay -
-#              throws when the SSM parameter is missing).
-#   Server B : extensions/.env overlay; CMS SMTP credentials from SSM (see
-#              Set-SmtpOverlay).
-#   Server C : biar/.env overlay (host names, S3A_ENDPOINT); NiFi keycloak
-#              mode + SSM secrets (see Set-NifiAuthOverlay - throws when the
-#              custom domain or the SSM parameters are missing); JupyterHub
-#              OIDC + CouchDB settings in the service env files (see
-#              Set-BiarServiceEnvOverlay - throws when the JupyterHub SSM
-#              parameters are missing).
+#              KC_HOSTNAME_PORT from keycloak.env; the tazama-demo,
+#              JupyterHub and NiFi public URLs (see Set-DemoUiOverlay,
+#              Set-JupyterHubOidcOverlay, Set-NifiOidcOverlay).
+#   Server B : extensions/secrets.env; extensions/.env overlay.
+#   Server C : biar/secrets.env; biar/.env overlay (host names, S3A_ENDPOINT);
+#              NiFi keycloak mode (see Set-NifiAuthOverlay - throws when the
+#              custom domain is missing); public Keycloak / JupyterHub URLs in
+#              biar-jupyterhub.env (see Set-BiarServiceEnvOverlay).
 #
 # Shared by deploy-core.ps1, deploy-biar.ps1, deploy-service.ps1 and
 # restart-service.ps1 so the overlay set stays identical across initial
@@ -589,7 +574,12 @@ function Set-ServerEnvOverlays {
 
     switch ($Server) {
         'A' {
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'core' -ServerLabel $label
+
             if (-not $SkipExtensionsOverlay) {
+                # DEMS / DEAPI run from extensions/ on Server A
+                Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
+
                 # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
                 Write-Host "[$label] Re-applying extensions .env overlay..."
                 Set-RemoteEnvOverlay -InstanceId $InstanceId `
@@ -613,36 +603,37 @@ function Set-ServerEnvOverlays {
             Invoke-RemoteCommand -InstanceId $InstanceId `
                 -Command "sed -i '/^KC_HOSTNAME_PORT=/d' $Script:RemoteRepo/core/env/keycloak.env"
 
-            # core/.env: tazama-demo public URL + NEXTAUTH_SECRET (custom domain only)
+            # core/.env: tazama-demo public URL (custom domain only)
             Set-DemoUiOverlay -InstanceId $InstanceId -DemoPublicUrl $TofuOutputs.DemoPublicUrl -ServerLabel $label
 
-            # core/.env: JupyterHub public URL + OIDC client secret for the realm import (custom domain only)
+            # core/.env: JupyterHub public URL for the realm import (custom domain only)
             Set-JupyterHubOidcOverlay -InstanceId $InstanceId -JupyterPublicUrl $TofuOutputs.JupyterPublicUrl -ServerLabel $label
 
-            # core/.env: NiFi public URL + OIDC client secret for the realm import (custom domain only)
+            # core/.env: NiFi public URL for the realm import (custom domain only)
             Set-NifiOidcOverlay -InstanceId $InstanceId -NifiPublicUrl $TofuOutputs.NifiPublicUrl -ServerLabel $label
         }
         'B' {
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
+
             # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
             Write-Host "[$label] Re-applying extensions .env overlay..."
             Set-RemoteEnvOverlay -InstanceId $InstanceId `
                 -OverlayFile (Join-Path $Script:TemplatesDir 'env-extensions.tpl') `
                 -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
-
-            # extensions/.env: CMS SMTP credentials from SSM
-            Set-SmtpOverlay -InstanceId $InstanceId -ServerLabel $label
         }
         'C' {
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'biar' -ServerLabel $label
+
             # biar/.env: SERVER_A/B/C_HOST, S3A_ENDPOINT
             Write-Host "[$label] Re-applying biar .env overlay..."
             Set-RemoteEnvOverlay -InstanceId $InstanceId `
                 -OverlayFile (Join-Path $Script:TemplatesDir 'env-biar.tpl') `
                 -RemoteEnvFile "$Script:RemoteRepo/biar/.env"
 
-            # biar/.env: NiFi keycloak mode + SSM secrets (throws if not seeded)
+            # biar/.env: NiFi keycloak mode (throws without the custom domain)
             Set-NifiAuthOverlay -InstanceId $InstanceId -TofuOutputs $TofuOutputs -ServerLabel $label
 
-            # biar/env/*.env: JupyterHub OIDC + CouchDB URL (throws if JupyterHub secrets not seeded)
+            # biar/env/biar-jupyterhub.env: public Keycloak / JupyterHub URLs
             Set-BiarServiceEnvOverlay -InstanceId $InstanceId -TofuOutputs $TofuOutputs -ServerLabel $label
         }
     }

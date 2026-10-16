@@ -5,16 +5,14 @@
 
 .DESCRIPTION
     1. Waits for the bootstrap script to complete on Server C.
-    2. Copies biar/.env to the server.
+    2. Renders biar/secrets.env from SSM (S3, databases, CouchDB, JupyterHub,
+       NiFi secrets).
     3. Applies the Server C env overlays (Set-ServerEnvOverlays):
        - biar/.env: SERVER_A_HOST, SERVER_B_HOST, SERVER_C_HOST -> private DNS.
-       - NiFi keycloak mode with secrets from SSM /tazama/creds/nifi/*.
-       - biar-jupyterhub.env: public Keycloak/hub URLs + SSM
-         /tazama/creds/jupyterhub/{oidc-client-secret,crypt_key}.
-       - biar-unstructured-pipeline.env: COUCHDB_URL with SSM
-         /tazama/creds/couchdb/password.
-       Requires the custom domain; stops before any container starts if a NiFi
-       or JupyterHub parameter is missing.
+       - biar/.env: NiFi keycloak mode (issuer, proxy hosts).
+       - biar-jupyterhub.env: public Keycloak/hub URLs.
+       Requires the custom domain; stops before any container starts if it
+       is missing or a required SSM parameter is missing.
     4. Creates the Tazama warehouse host path if it does not exist.
     5. Starts the biar stack using a staged Ozone startup:
          a. SCM first (Storage Container Manager must initialise before OM)
@@ -62,11 +60,11 @@ Write-Host '[Server C] Ensuring correct repo branch and pulling latest...'
 Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo && git fetch origin $Script:RepoBranch && git checkout $Script:RepoBranch && git reset --hard origin/$Script:RepoBranch"
 Write-Host '[Server C] Repo up to date.' -ForegroundColor Green
 
-# -- 3. Apply env overlays -----------------------------------------------------
-# The same Server C overlay set as deploy-service.ps1 / restart-service.ps1:
-# env-biar.tpl (private DNS names), NiFi keycloak mode, JupyterHub OIDC and
-# the CouchDB URL. Throws - before anything is (re)started - when the custom
-# domain or a required SSM parameter is missing.
+# -- 3. Secrets and env overlays -----------------------------------------------
+# The same Server C set as deploy-service.ps1 / restart-service.ps1:
+# biar/secrets.env from SSM, env-biar.tpl (private DNS names), NiFi keycloak
+# mode and the JupyterHub public URLs. Throws - before anything is
+# (re)started - when the custom domain or a required SSM parameter is missing.
 Set-ServerEnvOverlays -Server 'C' -InstanceId $idC -TofuOutputs $out
 
 # -- 4. Create warehouse host path --------------------------------------------
@@ -85,16 +83,17 @@ $infraFile = './docker-compose.biar.infrastructure.yaml'
 $hubFile   = './docker-compose.hub.biar.yaml'
 $utilsFile = './docker-compose.utils.init.yaml'
 $pullFlag  = if ($NoPull) { '' } else { '--pull always' }
+$compose   = 'docker compose --env-file .env --env-file secrets.env -p tazama-biar'
 
 # Step 5a: SCM only
 Write-Host '[Server C] Starting Ozone SCM...'
-Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo/biar && docker compose -p tazama-biar -f $infraFile up -d ozone-scm"
+Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo/biar && $compose -f $infraFile up -d ozone-scm"
 
 # Step 5b: Wait for SCM to initialise, then start OM
 Write-Host '[Server C] Waiting 20s for SCM to initialise...'
 Start-Sleep -Seconds 20
 Write-Host '[Server C] Starting Ozone OM...'
-Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo/biar && docker compose -p tazama-biar -f $infraFile up -d ozone-om"
+Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo/biar && $compose -f $infraFile up -d ozone-om"
 
 # Step 5c: Wait for OM, then bring up the full stack
 Write-Host '[Server C] Waiting 15s for OM to initialise...'
@@ -110,7 +109,7 @@ if (-not $NoPull) {
 }
 
 Write-Host '[Server C] Starting full biar stack...'
-Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo/biar && docker compose -p tazama-biar -f $infraFile -f $hubFile -f $utilsFile up -d $pullFlag".Trim()
+Invoke-RemoteCommand -InstanceId $idC -Command "cd $Script:RemoteRepo/biar && $compose -f $infraFile -f $hubFile -f $utilsFile up -d $pullFlag".Trim()
 
 Write-Host ''
 Write-Host '[Server C] tazama-biar is up.' -ForegroundColor Green

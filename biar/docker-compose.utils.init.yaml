@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      S3A_ACCESS_KEY: ${TAZAMA_S3_ACCESS_KEY:?set it in biar/secrets.env}
+      S3A_SECRET_KEY: ${TAZAMA_S3_SECRET_KEY:?set it in biar/secrets.env}
     depends_on:
       - ozone-s3g
     entrypoint: >
@@ -36,6 +39,11 @@ services:
     environment:
       NIFI_AUTH: ${NIFI_AUTH:-none}
       NIFI_HTTPS_INTERNAL_PORT: "8443"
+      # Set on the controller services of a freshly imported flow
+      TAZAMA_CORE_PG_PASSWORD: ${TAZAMA_CORE_PG_PASSWORD:?set it in biar/secrets.env}
+      TAZAMA_EXT_PG_PASSWORD: ${TAZAMA_EXT_PG_PASSWORD:?set it in biar/secrets.env}
+      TAZAMA_S3_ACCESS_KEY: ${TAZAMA_S3_ACCESS_KEY:?set it in biar/secrets.env}
+      TAZAMA_S3_SECRET_KEY: ${TAZAMA_S3_SECRET_KEY:?set it in biar/secrets.env}
     depends_on:
       - biar-nifi
     volumes:

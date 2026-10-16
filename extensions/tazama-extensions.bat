@@ -3,6 +3,9 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
+:: Every compose call that reads compose files loads the secrets (README.md, section 6)
+set "COMPOSE=docker compose --env-file .env --env-file secrets.env"
+
 :menu
 set "PGADMIN=[ ]"
 cls
@@ -21,8 +24,9 @@ echo    4. Deploy extensions    (DockerHub images)
 echo.
 ::  Utilities / teardown
 echo    5. Utilities / teardown
+echo    6. Audit secrets
 echo.
-set /p "choice=Select option (1-5), or (q)uit: "
+set /p "choice=Select option (1-6), or (q)uit: "
 
 if /i "%choice%"=="q" goto :quit
 if /i "%choice%"==""   goto :menu
@@ -35,12 +39,14 @@ if "%choice%"=="3"     goto :pgadmin_prompt
 if "%choice%"=="4"     set "BUILD_TYPE=hub"
 if "%choice%"=="4"     goto :pgadmin_prompt
 if "%choice%"=="5"     goto :utils
+if "%choice%"=="6"     goto :audit
 goto :menu
 
 :: ---------------------------------------------------------------
 :: Server A pre-flight: DEMS + DEAPI
 :: ---------------------------------------------------------------
 :check_core
+if not exist "secrets.env" goto :secrets_missing
 docker compose -p tazama-core ps --status running -q 2>nul | findstr . >nul 2>&1
 if errorlevel 1 (
     echo.
@@ -52,9 +58,9 @@ if errorlevel 1 (
 )
 
 if "%API_BUILD%"=="dev" (
-    set "apicmd=docker compose -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml"
+    set "apicmd=!COMPOSE! -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml"
 ) else (
-    set "apicmd=docker compose -p tazama-core -f ./docker-compose.hub.extensions.apis.yaml"
+    set "apicmd=!COMPOSE! -p tazama-core -f ./docker-compose.hub.extensions.apis.yaml"
 )
 
 echo.
@@ -66,6 +72,7 @@ goto :done
 :: Server B extensions stack
 :: ---------------------------------------------------------------
 :pgadmin_prompt
+if not exist "secrets.env" goto :secrets_missing
 cls
 echo.
 echo  Optional services:
@@ -90,7 +97,18 @@ if not exist ".\auth\test-public-key.pem" (
     )
 )
 
-set "cmd=docker compose -p tazama-extensions"
+:: Derive the SFTP hash and encrypted password from TAZAMA_SFTP_PASSWORD (README.md, section 6)
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\utils\sftp-derived-secrets.ps1" -GroupDir "%CD%"
+if errorlevel 1 (
+    echo.
+    echo  ERROR: fix secrets.env and retry.
+    echo.
+    pause
+    goto :menu
+)
+
+set "cmd=!COMPOSE! -p tazama-extensions"
 set "cmd=!cmd! -f ./docker-compose.extensions.infrastructure.yaml"
 if "%BUILD_TYPE%"=="dev" (
     set "cmd=!cmd! -f ./docker-compose.dev.extensions.yaml"
@@ -126,21 +144,41 @@ if "%util%"=="4"     goto :start_pgadmin
 goto :utils
 
 :down_extensions
-docker compose -p tazama-extensions -f ./docker-compose.extensions.infrastructure.yaml -f ./docker-compose.dev.extensions.yaml -f ./docker-compose.utils.pgadmin.yaml down --volumes
+if not exist "secrets.env" goto :secrets_missing
+%COMPOSE% -p tazama-extensions -f ./docker-compose.extensions.infrastructure.yaml -f ./docker-compose.dev.extensions.yaml -f ./docker-compose.utils.pgadmin.yaml down --volumes
 goto :done
 
 :down_apis
-docker compose -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml down --remove-orphans
+if not exist "secrets.env" goto :secrets_missing
+%COMPOSE% -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml down --remove-orphans
 goto :done
 
 :down_all
-docker compose -p tazama-extensions -f ./docker-compose.extensions.infrastructure.yaml -f ./docker-compose.dev.extensions.yaml -f ./docker-compose.utils.pgadmin.yaml down --volumes
-docker compose -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml down --remove-orphans
+if not exist "secrets.env" goto :secrets_missing
+%COMPOSE% -p tazama-extensions -f ./docker-compose.extensions.infrastructure.yaml -f ./docker-compose.dev.extensions.yaml -f ./docker-compose.utils.pgadmin.yaml down --volumes
+%COMPOSE% -p tazama-core -f ./docker-compose.dev.extensions.apis.yaml down --remove-orphans
 goto :done
 
 :start_pgadmin
-docker compose -p tazama-extensions -f ./docker-compose.utils.pgadmin.yaml up -d
+if not exist "secrets.env" goto :secrets_missing
+%COMPOSE% -p tazama-extensions -f ./docker-compose.utils.pgadmin.yaml up -d
 goto :done
+
+:audit
+cls
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\utils\audit-secrets.ps1" -GroupDir "%CD%"
+echo.
+pause
+goto :menu
+
+:secrets_missing
+echo.
+echo  ERROR: secrets.env not found in %CD%.
+echo         Copy secrets.env.template to secrets.env and fill it in - see README.md, section 6.
+echo.
+pause
+goto :menu
 
 :done
 echo.

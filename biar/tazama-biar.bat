@@ -3,6 +3,9 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
+:: Every compose call that reads compose files loads the secrets (README.md, section 6)
+set "COMPOSE=docker compose --env-file .env --env-file secrets.env"
+
 :menu
 cls
 echo.
@@ -16,14 +19,16 @@ echo.
 echo    1. Deploy BIAR stack (DockerHub images)
 echo    2. Deploy BIAR stack (GitHub builds)
 echo    3. Utilities / teardown
+echo    4. Audit secrets
 echo.
-set /p "choice=Select option (1-3), or (q)uit: "
+set /p "choice=Select option (1-4), or (q)uit: "
 
 if /i "%choice%"=="q" goto :quit
 if /i "%choice%"==""   goto :menu
 if "%choice%"=="1"     goto :check_core_hub
 if "%choice%"=="2"     goto :check_core_dev
 if "%choice%"=="3"     goto :utils
+if "%choice%"=="4"     goto :audit
 goto :menu
 
 :: ---------------------------------------------------------------
@@ -36,6 +41,7 @@ goto :check_core
 set "DEPLOY_TARGET=dev"
 goto :check_core
 :check_core
+if not exist "secrets.env" goto :secrets_missing
 :: Read SERVER_A_HOST from .env (default: localhost for single-machine; set to private IP for AWS multi-host)
 set "SERVER_A_HOST=localhost"
 for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
@@ -64,7 +70,7 @@ goto :deploy_dev
 echo.
 echo  Deploying BIAR stack (DockerHub images)...
 echo.
-docker compose -p tazama-biar ^
+%COMPOSE% -p tazama-biar ^
     -f ./docker-compose.biar.infrastructure.yaml ^
     -f ./docker-compose.hub.biar.yaml ^
     -f ./docker-compose.utils.init.yaml ^
@@ -75,7 +81,7 @@ goto :done
 echo.
 echo  Deploying BIAR stack (GitHub builds)...
 echo.
-docker compose -p tazama-biar ^
+%COMPOSE% -p tazama-biar ^
     -f ./docker-compose.biar.infrastructure.yaml ^
     -f ./docker-compose.dev.biar.yaml ^
     -f ./docker-compose.utils.init.yaml ^
@@ -98,7 +104,8 @@ if "%util%"=="1"     goto :down_biar
 goto :utils
 
 :down_biar
-docker compose -p tazama-biar ^
+if not exist "secrets.env" goto :secrets_missing
+%COMPOSE% -p tazama-biar ^
     -f ./docker-compose.biar.infrastructure.yaml ^
     -f ./docker-compose.hub.biar.yaml ^
     -f ./docker-compose.dev.biar.yaml ^
@@ -109,6 +116,22 @@ goto :done
 :done
 echo.
 echo  Done.
+pause
+goto :menu
+
+:audit
+cls
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\utils\audit-secrets.ps1" -GroupDir "%CD%"
+echo.
+pause
+goto :menu
+
+:secrets_missing
+echo.
+echo  ERROR: secrets.env not found in %CD%.
+echo         Copy secrets.env.template to secrets.env and fill it in - see README.md, section 6.
+echo.
 pause
 goto :menu
 

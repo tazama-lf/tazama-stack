@@ -18,7 +18,7 @@ services:
       - "${POSTGRESQL_CMS_PORT}:5432"
     environment:
         - POSTGRES_USER=postgres
-        - POSTGRES_PASSWORD=unused
+        - POSTGRES_PASSWORD=${TAZAMA_EXT_PG_PASSWORD:?set it in extensions/secrets.env}
 
   sftp:
     image: atmoz/sftp
@@ -28,7 +28,7 @@ services:
       - "${SFTP_PORT}:22"
     volumes:
       - sftp_data:/home/user/upload
-    command: user:password:1001
+    command: user:${TAZAMA_SFTP_PASSWORD_HASH:?set it in extensions/secrets.env}:e:1001
     env_file:
       - ./.env
 
@@ -36,13 +36,18 @@ services:
     image: couchdb:3.3
     container_name: couchdb
     restart: unless-stopped
-    env_file:
-      - ./env/case-management-system.env
+    environment:
+      # The image entrypoint writes the admin account and the cookie secret
+      # into local.d/docker.ini at container start.
+      - COUCHDB_USER=${TAZAMA_COUCHDB_USERNAME:?set it in extensions/secrets.env}
+      - COUCHDB_PASSWORD=${TAZAMA_COUCHDB_PASSWORD:?set it in extensions/secrets.env}
+      - COUCHDB_SECRET=${TAZAMA_COUCHDB_COOKIE_SECRET:?set it in extensions/secrets.env}
     ports:
       - "${COUCHDB_PORT}:5984"
     volumes:
       - couchdb_data:/opt/couchdb/data
-      - ./couchdb/migration/local.ini:/opt/couchdb/etc/local.d/local.ini
+      # Read-only, and sorts before docker.ini so the env admin and secret win
+      - ./couchdb/migration/local.ini:/opt/couchdb/etc/local.d/10-tazama.ini:ro
 
   case-management-system-migrate:
     image: tazamaorg/case-management-system-migrate:${TAZAMA_VERSION}
@@ -66,6 +71,8 @@ services:
       - ./env/case-management-system.env
     environment:
       - JAVA_TOOL_OPTIONS=-Xms256m -Xmx1536m
+      # REST API admin (rest-admin); must match FLOWABLE_PASSWORD in the CMS env
+      - FLOWABLE_REST_APP_ADMIN_PASSWORD=${TAZAMA_FLOWABLE_PASSWORD:?set it in extensions/secrets.env}
     mem_limit: 2g
     ports:
       - "${FLOWABLE_PORT}:8080"

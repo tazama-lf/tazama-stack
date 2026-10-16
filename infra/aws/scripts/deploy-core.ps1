@@ -6,8 +6,9 @@
 .DESCRIPTION
     1. Reads instance IDs from tofu outputs.
     2. Waits for the bootstrap script to complete on Server A.
-    3. Starts the tazama-core Docker Compose stack (hub images).
-    4. Disables the committed test-realm users that grant NiFi / JupyterHub
+    3. Renders core/secrets.env from SSM and applies the Server A env overlays.
+    4. Starts the tazama-core Docker Compose stack (hub images).
+    5. Disables the committed test-realm users that grant NiFi / JupyterHub
        access (nifi-admin@tazama.org, jupyter-user@tazama.org) via kcadm.
 
     Run from infra/aws/scripts/ or anywhere - paths are resolved relative
@@ -24,12 +25,7 @@
 
 [CmdletBinding()]
 param(
-    [switch]$NoPull,
-
-    # PostgreSQL superuser password and Keycloak admin password.
-    # Also used for all service-level DB password variables (RAW_HISTORY_DATABASE_PASSWORD etc.).
-    # If omitted, the local-dev default 'unused' / 'password' values are left in place.
-    [string]$Password = ''
+    [switch]$NoPull
 )
 . "$PSScriptRoot\helpers.ps1"
 
@@ -49,56 +45,13 @@ Write-Host '[Server A] Pulling latest repo changes...'
 Invoke-RemoteCommand -InstanceId $idA -Command "cd $Script:RemoteRepo && git fetch origin $Script:RepoBranch && git checkout $Script:RepoBranch && git reset --hard origin/$Script:RepoBranch"
 Write-Host '[Server A] Repo up to date.' -ForegroundColor Green
 
-# -- 3. Apply credentials overlay to core/.env and all service env files ------
-# core/.env is git-tracked and arrives on the server via the git pull above.
-# Apply credentials overlay to core/.env and all service env files.
-# The overlay is built in-memory from the -Password parameter and written to a
-# local temp file that is never committed. Keys already present are replaced;
-# absent keys are appended. Skipped entirely when -Password is not supplied.
-if ($Password) {
-    Write-Host '[Server A] Applying credentials overlay to core env files...'
-    $coreCredOverlay = @"
-POSTGRES_PASSWORD=$Password
-RAW_HISTORY_DATABASE_PASSWORD=$Password
-CONFIGURATION_DATABASE_PASSWORD=$Password
-EVENT_HISTORY_DATABASE_PASSWORD=$Password
-EVALUATION_DATABASE_PASSWORD=$Password
-NEXT_PUBLIC_PG_PASSWORD=$Password
-KEYCLOAK_ADMIN_PASSWORD=$Password
-"@
-    $tmpCred = [System.IO.Path]::GetTempFileName()
-    try {
-        Set-Content $tmpCred $coreCredOverlay -Encoding ASCII
-        $coreEnvFiles = @(
-            "$Script:RemoteRepo/core/.env"
-            "$Script:RemoteRepo/core/env/keycloak.env"
-            "$Script:RemoteRepo/core/env/tms-service.env"
-            "$Script:RemoteRepo/core/env/admin-service.env"
-            "$Script:RemoteRepo/core/env/typology-processor.env"
-            "$Script:RemoteRepo/core/env/event-director.env"
-            "$Script:RemoteRepo/core/env/event-adjudicator.env"
-            "$Script:RemoteRepo/core/env/rule-executer.env"
-            "$Script:RemoteRepo/core/env/rule-901.env"
-            "$Script:RemoteRepo/core/env/rule-902.env"
-            "$Script:RemoteRepo/core/env/event-flow.env"
-            "$Script:RemoteRepo/core/env/batch-ppa.env"
-            "$Script:RemoteRepo/core/env/tazama-demo.env"
-        )
-        foreach ($envFile in $coreEnvFiles) {
-            Set-RemoteEnvOverlay -InstanceId $idA -OverlayFile $tmpCred -RemoteEnvFile $envFile
-        }
-    } finally {
-        Remove-Item $tmpCred -Force -ErrorAction SilentlyContinue
-    }
-    Write-Host '[Server A] Credentials overlay applied.' -ForegroundColor Green
-} else {
-    Write-Warning '[Server A] -Password not supplied — DB and Keycloak admin passwords left at local-dev defaults.'
-}
-
-# Re-apply Server A's AWS env overlays: KEYCLOAK_HOSTNAME (when an ALB is active),
-# strip KC_HOSTNAME_PORT from keycloak.env, and the tazama-demo public URL +
-# NEXTAUTH_SECRET (when a custom domain is active). -SkipExtensionsOverlay because
-# the extensions/.env overlay on Server A is owned by deploy-extensions.ps1.
+# -- 3. Secrets and env overlays -----------------------------------------------
+# core/secrets.env is rendered from SSM /tazama/* (throws when a required
+# parameter is missing). Then Server A's AWS env overlays: KEYCLOAK_HOSTNAME
+# (when an ALB is active), strip KC_HOSTNAME_PORT from keycloak.env, and the
+# demo / JupyterHub / NiFi public URLs (when a custom domain is active).
+# -SkipExtensionsOverlay because extensions/secrets.env and the extensions/.env
+# overlay on Server A are owned by deploy-extensions.ps1.
 Set-ServerEnvOverlays -Server 'A' -InstanceId $idA -TofuOutputs $out -SkipExtensionsOverlay
 
 # -- 4. Copy Keycloak realm config to Server A --------------------------------
@@ -126,6 +79,8 @@ Write-Host '[Server A] Keycloak realm config copied.' -ForegroundColor Green
 Write-Host '[Server A] Starting tazama-core stack...'
 
 $composeArgs = @(
+    '--env-file .env'
+    '--env-file secrets.env'
     '-p tazama-core'
     '-f ./docker-compose.base.infrastructure.yaml'
     '-f ./docker-compose.base.override.yaml'

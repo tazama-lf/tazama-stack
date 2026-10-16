@@ -8,22 +8,20 @@
     order.  Each script waits for its server's bootstrap to complete before
     proceeding, so this script is safe to run immediately after `tofu apply`.
 
+    Secrets come from SSM /tazama/* (rendered into each group's secrets.env
+    by the individual deploy scripts); there is no password parameter.
+
     Run from infra/aws/scripts/ or anywhere - paths are resolved relative
     to this script's location.
 
 .EXAMPLE
     .\deploy.ps1
-    .\deploy.ps1 -Password 'your-strong-password'
+    .\deploy.ps1 -NoPull
 #>
 
 [CmdletBinding()]
 param(
-    [switch]$NoPull,
-
-    # PostgreSQL and Keycloak admin password for the cloud deployment.
-    # Passed through to deploy-core.ps1 and deploy-extensions.ps1.
-    # If omitted, local-dev defaults ('unused' / 'password') are left in place.
-    [string]$Password = ''
+    [switch]$NoPull
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,11 +31,10 @@ Write-Host '=====================================================' -ForegroundCo
 Write-Host '  Tazama Full-Stack Deploy'                            -ForegroundColor Cyan
 Write-Host '=====================================================' -ForegroundColor Cyan
 
-$passArgs = if ($Password) { @('-Password', $Password) } else { @() }
 $pullArgs  = if ($NoPull)  { @('-NoPull') }              else { @() }
 
-& "$PSScriptRoot\deploy-core.ps1"       @passArgs @pullArgs
-& "$PSScriptRoot\deploy-extensions.ps1" @passArgs @pullArgs
+& "$PSScriptRoot\deploy-core.ps1"       @pullArgs
+& "$PSScriptRoot\deploy-extensions.ps1" @pullArgs
 & "$PSScriptRoot\deploy-biar.ps1"       @pullArgs
 
 Write-Host ''

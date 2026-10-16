@@ -197,19 +197,27 @@ if ($effectiveBranch) {
 # After a repo pull, re-apply the same per-server overlays that the deploy
 # scripts apply. git reset --hard restores committed defaults; the overlays
 # below restore the AWS-specific values (private DNS names, public API URLs,
-# KEYCLOAK_HOSTNAME, etc.) that must not be committed.
+# KEYCLOAK_HOSTNAME, etc.) that must not be committed, and render the
+# server's secrets.env files from SSM. Without a repo pull, only the
+# secrets.env of the service's component group is re-rendered, so the
+# container always starts with the current SSM values.
+$group = Split-Path -Leaf $workingDir
 if ($effectiveBranch) {
     if ($DryRun) {
-        Write-Host "[$label] [DRY RUN] Would re-apply AWS env overlays for Server $Server." -ForegroundColor Yellow
+        Write-Host "[$label] [DRY RUN] Would re-apply AWS env overlays and secrets.env for Server $Server." -ForegroundColor Yellow
     } else {
         Set-ServerEnvOverlays -Server $Server -InstanceId $instanceId -TofuOutputs $out
         Write-Host "[$label] Overlays applied." -ForegroundColor Green
     }
+} elseif ($DryRun) {
+    Write-Host "[$label] [DRY RUN] Would render $group/secrets.env from SSM." -ForegroundColor Yellow
+} else {
+    Set-ServerSecretsEnv -InstanceId $instanceId -Group $group -ServerLabel $label
 }
 
 # -- Recreate -------------------------------------------------------------------------------
 $composeCmd = (
-    "cd $workingDir && docker compose -p $project $fFlags " +
+    "cd $workingDir && docker compose --env-file .env --env-file secrets.env -p $project $fFlags " +
     "up -d --no-deps --force-recreate $pullFlag $Service"
 ).Trim()
 

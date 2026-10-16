@@ -14,7 +14,7 @@ echo "=========================================="
 # Reset Hasura metadata
 curl -s -X POST \
     -H "Content-Type: application/json" \
-    -H "x-hasura-admin-secret: password" \
+    -H "x-hasura-admin-secret: ${HASURA_GRAPHQL_ADMIN_SECRET}" \
     -d '{"type":"clear_metadata","args":{}}' \
     http://hasura:8080/v1/metadata > /dev/null 2>&1
 echo "✓ Metadata cleared"
@@ -28,7 +28,7 @@ echo "=========================================="
 for source in event_history raw_history configuration evaluation; do
     curl -s -X POST \
         -H "Content-Type: application/json" \
-        -H "x-hasura-admin-secret: password" \
+        -H "x-hasura-admin-secret: ${HASURA_GRAPHQL_ADMIN_SECRET}" \
         -d "{\"type\":\"pg_drop_source\",\"args\":{\"name\":\"$source\",\"cascade\":true}}" \
         http://hasura:8080/v1/metadata > /dev/null 2>&1
 done
@@ -43,7 +43,7 @@ call_hasura_api() {
   
   response=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://hasura:8080/v1/metadata \
     -H "Content-Type: application/json" \
-    -H "x-hasura-admin-secret: password" \
+    -H "x-hasura-admin-secret: ${HASURA_GRAPHQL_ADMIN_SECRET}" \
     -d "$payload")
   
   if [ "$response" = "200" ]; then

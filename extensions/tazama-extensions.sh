@@ -5,9 +5,22 @@ cd "$(dirname "$0")"
 
 CORE_PROJECT="tazama-core"
 EXTENSIONS_PROJECT="tazama-extensions"
+# Every compose call that reads compose files loads the secrets (README.md, section 6)
+COMPOSE="docker compose --env-file .env --env-file secrets.env"
 
 pause() {
     read -rp " Press Enter to continue..."
+}
+
+require_secrets() {
+    if [[ ! -f secrets.env ]]; then
+        echo ""
+        echo " ERROR: secrets.env not found in $(pwd)."
+        echo "        Copy secrets.env.template to secrets.env and fill it in (README.md, section 6)."
+        echo ""
+        pause
+        return 1
+    fi
 }
 
 # ---------------------------------------------------------------
@@ -15,6 +28,8 @@ pause() {
 # ---------------------------------------------------------------
 deploy_apis() {
     local api_build=$1
+
+    require_secrets || return 1
 
     local running
     running=$(docker compose -p "$CORE_PROJECT" ps --status running -q 2>/dev/null)
@@ -29,9 +44,9 @@ deploy_apis() {
 
     local apicmd
     if [[ "$api_build" == "dev" ]]; then
-        apicmd="docker compose -p $CORE_PROJECT -f ./docker-compose.dev.extensions.apis.yaml"
+        apicmd="$COMPOSE -p $CORE_PROJECT -f ./docker-compose.dev.extensions.apis.yaml"
     else
-        apicmd="docker compose -p $CORE_PROJECT -f ./docker-compose.hub.extensions.apis.yaml"
+        apicmd="$COMPOSE -p $CORE_PROJECT -f ./docker-compose.hub.extensions.apis.yaml"
     fi
 
     echo ""
@@ -48,6 +63,8 @@ deploy_apis() {
 # ---------------------------------------------------------------
 deploy_extensions() {
     local build_type=$1
+
+    require_secrets || return 1
 
     echo ""
     echo " Optional services:"
@@ -76,7 +93,17 @@ deploy_extensions() {
         fi
     fi
 
-    local cmd="docker compose -p $EXTENSIONS_PROJECT"
+    # Derive the SFTP hash and encrypted password from TAZAMA_SFTP_PASSWORD (README.md, section 6)
+    echo ""
+    if ! bash ../utils/sftp-derived-secrets.sh "$(pwd)"; then
+        echo ""
+        echo " ERROR: fix secrets.env and retry."
+        echo ""
+        pause
+        return 1
+    fi
+
+    local cmd="$COMPOSE -p $EXTENSIONS_PROJECT"
     cmd="$cmd -f ./docker-compose.extensions.infrastructure.yaml"
     if [[ "$build_type" == "dev" ]]; then
         cmd="$cmd -f ./docker-compose.dev.extensions.yaml"
@@ -100,7 +127,8 @@ deploy_extensions() {
 # Utilities
 # ---------------------------------------------------------------
 down_extensions() {
-    docker compose -p "$EXTENSIONS_PROJECT" \
+    require_secrets || return 1
+    $COMPOSE -p "$EXTENSIONS_PROJECT" \
         -f ./docker-compose.extensions.infrastructure.yaml \
         -f ./docker-compose.dev.extensions.yaml \
         -f ./docker-compose.utils.pgadmin.yaml \
@@ -112,7 +140,8 @@ down_extensions() {
 }
 
 down_apis() {
-    docker compose -p "$CORE_PROJECT" \
+    require_secrets || return 1
+    $COMPOSE -p "$CORE_PROJECT" \
         -f ./docker-compose.dev.extensions.apis.yaml \
         down --remove-orphans
 
@@ -122,12 +151,13 @@ down_apis() {
 }
 
 down_all() {
-    docker compose -p "$EXTENSIONS_PROJECT" \
+    require_secrets || return 1
+    $COMPOSE -p "$EXTENSIONS_PROJECT" \
         -f ./docker-compose.extensions.infrastructure.yaml \
         -f ./docker-compose.dev.extensions.yaml \
         -f ./docker-compose.utils.pgadmin.yaml \
         down --volumes
-    docker compose -p "$CORE_PROJECT" \
+    $COMPOSE -p "$CORE_PROJECT" \
         -f ./docker-compose.dev.extensions.apis.yaml \
         down --remove-orphans
 
@@ -137,7 +167,8 @@ down_all() {
 }
 
 start_pgadmin() {
-    docker compose -p "$EXTENSIONS_PROJECT" \
+    require_secrets || return 1
+    $COMPOSE -p "$EXTENSIONS_PROJECT" \
         -f ./docker-compose.utils.pgadmin.yaml \
         up -d
 
@@ -189,8 +220,9 @@ menu() {
         echo "   4. Deploy extensions    (DockerHub images)"
         echo ""
         echo "   5. Utilities / teardown"
+        echo "   6. Audit secrets"
         echo ""
-        read -rp " Select option (1-5), or (q)uit: " choice
+        read -rp " Select option (1-6), or (q)uit: " choice
 
         case "$choice" in
             q|Q) exit 0 ;;
@@ -199,6 +231,13 @@ menu() {
             3) deploy_extensions "dev" ;;
             4) deploy_extensions "hub" ;;
             5) utils ;;
+            6)
+                clear
+                echo ""
+                bash ../utils/audit-secrets.sh "$(pwd)"
+                echo ""
+                pause
+                ;;
         esac
     done
 }

@@ -18,10 +18,10 @@ services:
       - KEYCLOAK_IMPORT_STRATEGY=IGNORE_EXISTING
       # Resolved by the realm import placeholders on the jupyterhub client
       - JUPYTERHUB_PUBLIC_URL=${JUPYTERHUB_PUBLIC_URL:-http://localhost:8000}
-      - JUPYTERHUB_OIDC_CLIENT_SECRET=${JUPYTERHUB_OIDC_CLIENT_SECRET:-jupyterhub-test-secret}
+      - JUPYTERHUB_OIDC_CLIENT_SECRET=${TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET:?set it in core/secrets.env}
       # Resolved by the realm import placeholders on the nifi client
       - NIFI_PUBLIC_URL=${NIFI_PUBLIC_URL:-https://localhost:8443}
-      - TAZAMA_NIFI_OIDC_CLIENT_SECRET=${TAZAMA_NIFI_OIDC_CLIENT_SECRET:-nifi-test-secret}
+      - TAZAMA_NIFI_OIDC_CLIENT_SECRET=${TAZAMA_NIFI_OIDC_CLIENT_SECRET:?set it in core/secrets.env}
       - QUARKUS_HTTP_ACCESS_LOG_ENABLED=true
       - KC_LOG_LEVEL=INFO
     volumes:
@@ -86,9 +86,7 @@ services:
       - AUTH_URL=${DEMO_PUBLIC_URL:-http://localhost:3011}
       - NEXT_PUBLIC_URL=${DEMO_PUBLIC_URL:-http://localhost:3011}
       - NEXT_PUBLIC_WS_URL=${DEMO_PUBLIC_URL:-http://localhost:3011}
-      # Defaults to the committed test secret for local dev; the AWS deploy
-      # script overrides DEMO_NEXTAUTH_SECRET from SSM (/tazama/nextauth_secret).
-      - NEXTAUTH_SECRET=${DEMO_NEXTAUTH_SECRET:-Q1+Ojp/rNjpHVVQDVFxBYdhp4ELCZi/cCzGz2xXsD38=}
+      - NEXTAUTH_SECRET=${TAZAMA_DEMO_NEXTAUTH_SECRET:?set it in core/secrets.env}
       - CERT_PATH_PUBLIC=test-public-key.pem
     volumes:
       - ./auth/test-public-key.pem:/app/test-public-key.pem

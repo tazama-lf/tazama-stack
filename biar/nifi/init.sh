@@ -380,6 +380,68 @@ elif [ "$IMPORT_NIFI_TEMPLATE" = "true" ]; then
   fi
 
   echo "Template imported and instantiated successfully"
+
+  if [ "$INSTANTIATE_HTTP_CODE" = "201" ] || [ "$INSTANTIATE_HTTP_CODE" = "200" ]; then
+    # The template import strips sensitive properties, so the new controller
+    # services have no passwords. Set them from biar/secrets.env while the
+    # services are still disabled. Existing flows are never touched: rotate
+    # these values in the NiFi UI.
+    echo "Setting controller service credentials..."
+
+    SERVICES_BODY=$(nifi_curl -s \
+      "$BASE_URL/flow/process-groups/$TEMPLATE_TARGET_PG_ID/controller-services?includeAncestorGroups=false&includeDescendantGroups=true" \
+      | tr -d '\n' \
+      | sed 's/{"revision":/\n{"revision":/g')
+
+    json_escape() {
+      printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+    }
+
+    # $1 = service name, $2 = service type, $3 = JSON object of properties
+    set_service_properties() {
+      SERVICE_LINE=$(printf '%s\n' "$SERVICES_BODY" \
+        | grep "\"name\":\"$1\"" \
+        | grep "\"type\":\"$2\"" \
+        | head -n 1)
+      SERVICE_ID=$(printf '%s' "$SERVICE_LINE" \
+        | sed 's/^{"revision":{[^}]*}//' \
+        | grep -o '"id":"[^"]*"' \
+        | head -n 1 \
+        | cut -d'"' -f4)
+      SERVICE_VERSION=$(printf '%s' "$SERVICE_LINE" \
+        | sed -n 's/^{"revision":{[^}]*"version":\([0-9][0-9]*\).*/\1/p')
+
+      if [ -z "$SERVICE_ID" ] || [ -z "$SERVICE_VERSION" ]; then
+        echo "WARNING: controller service '$1' not found; set its credentials in the NiFi UI"
+        return 0
+      fi
+
+      # Read the body from stdin so the values never appear in the process list
+      SERVICE_HTTP_CODE=$(printf '{"revision":{"version":%s},"component":{"id":"%s","properties":%s}}' \
+          "$SERVICE_VERSION" "$SERVICE_ID" "$3" \
+        | nifi_curl -s -o /dev/null -w "%{http_code}" -X PUT "$BASE_URL/controller-services/$SERVICE_ID" \
+          -H "Content-Type: application/json" \
+          --data-binary @-)
+
+      if [ "$SERVICE_HTTP_CODE" = "200" ]; then
+        echo "Credentials set on controller service '$1'"
+      else
+        echo "WARNING: setting credentials on '$1' failed (HTTP $SERVICE_HTTP_CODE); set them in the NiFi UI"
+      fi
+    }
+
+    DBCP_TYPE="org.apache.nifi.dbcp.DBCPConnectionPool"
+    AWS_TYPE="org.apache.nifi.processors.aws.credentials.provider.service.AWSCredentialsProviderControllerService"
+    CORE_PG_PROPERTIES="{\"Password\":\"$(json_escape "$TAZAMA_CORE_PG_PASSWORD")\"}"
+    EXT_PG_PROPERTIES="{\"Password\":\"$(json_escape "$TAZAMA_EXT_PG_PASSWORD")\"}"
+    S3_PROPERTIES="{\"Access Key\":\"$(json_escape "$TAZAMA_S3_ACCESS_KEY")\",\"Secret Key\":\"$(json_escape "$TAZAMA_S3_SECRET_KEY")\"}"
+
+    for DB in evaluation enrichment raw_history event_history configuration; do
+      set_service_properties "$DB" "$DBCP_TYPE" "$CORE_PG_PROPERTIES"
+    done
+    set_service_properties tazama_cms "$DBCP_TYPE" "$EXT_PG_PROPERTIES"
+    set_service_properties AWSCredentialsProviderControllerService "$AWS_TYPE" "$S3_PROPERTIES"
+  fi
 else
   echo "Template import skipped (IMPORT_NIFI_TEMPLATE=false)"
 fi

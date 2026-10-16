@@ -30,8 +30,9 @@ echo 4. Multi-Tenant Public (DockerHub)
 echo 5. Docker Utilities
 echo 6. Database Utilities
 echo 7. Consoles
+echo 8. Audit secrets
 echo.
-echo Select option (1-7), or (q)uit:
+echo Select option (1-8), or (q)uit:
 set /p "type=Enter your choice: "
 
 if /i "%type%"=="q" goto :quit
@@ -79,6 +80,10 @@ if /i "%type%"=="6" (
 if /i "%type%"=="7" (
     goto :consoles
 )
+if /i "%type%"=="8" (
+    goto :audit
+)
+goto :menu
 
 :addons
 set "choice="
@@ -116,8 +121,13 @@ if "%choice%"=="6" if "%hasura%" == "[ ]" (set "hasura=[X]") else (set "hasura=[
 goto :addons
 
 :apply
+if not exist "secrets.env" (
+    call :secrets_missing
+    goto :addons
+)
+
 rem Base command for all options
-set "cmd=docker compose -f docker-compose.base.infrastructure.yaml -f docker-compose.base.override.yaml"
+set "cmd=docker compose --env-file .env --env-file secrets.env -f docker-compose.base.infrastructure.yaml -f docker-compose.base.override.yaml"
 
 rem Add core processors and configuration
 if %IS_GITHUB_DEPLOYMENT% EQU 1 (
@@ -358,6 +368,22 @@ echo.
 pause
 
 goto :consoles
+
+:audit
+cls
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\utils\audit-secrets.ps1" -GroupDir "%CD%"
+echo.
+pause
+goto :menu
+
+:secrets_missing
+echo.
+echo secrets.env not found in %CD%.
+echo Copy secrets.env.template to secrets.env and fill it in - see README.md, section 6.
+echo.
+pause
+exit /b 0
 
 :end
 echo.

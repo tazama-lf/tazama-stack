@@ -7,6 +7,9 @@
     SSH to each EC2 instance via EICE and runs `docker compose down` for its
     stack.  Does NOT destroy volumes - data is preserved.
 
+    Compose interpolates the -f files even for `down`, so each group's
+    secrets.env (rendered by the deploy scripts) must exist on the server.
+
     To also remove volumes (destructive - data loss):
         .\teardown.ps1 -RemoveVolumes
 
@@ -54,7 +57,7 @@ Write-Host '[Server C] Stopping tazama-biar...'
 try {
     Invoke-RemoteCommand -InstanceId $out.ServerC_InstanceId -Command @"
 cd $Script:RemoteRepo/biar && \
-docker compose -p tazama-biar \
+docker compose --env-file .env --env-file secrets.env -p tazama-biar \
   -f ./docker-compose.biar.infrastructure.yaml \
   down $downFlags
 "@
@@ -69,7 +72,7 @@ Write-Host '[Server B] Stopping tazama-extensions...'
 try {
     Invoke-RemoteCommand -InstanceId $out.ServerB_InstanceId -Command @"
 cd $Script:RemoteRepo/extensions && \
-docker compose -p tazama-extensions \
+docker compose --env-file .env --env-file secrets.env -p tazama-extensions \
   -f ./docker-compose.extensions.infrastructure.yaml \
   -f ./docker-compose.dev.extensions.yaml \
   down $downFlags
@@ -85,7 +88,7 @@ Write-Host '[Server A] Stopping DEMS + DEAPI on tazama-core...'
 try {
     Invoke-RemoteCommand -InstanceId $out.ServerA_InstanceId -Command @"
 cd $Script:RemoteRepo/extensions && \
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.dev.extensions.apis.yaml \
   down $downFlags
 "@
@@ -98,7 +101,7 @@ Write-Host '[Server A] Stopping tazama-core...'
 try {
     Invoke-RemoteCommand -InstanceId $out.ServerA_InstanceId -Command @"
 cd $Script:RemoteRepo/core && \
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.base.infrastructure.yaml \
   -f ./docker-compose.base.override.yaml \
   -f ./docker-compose.hub.cfg.yaml \

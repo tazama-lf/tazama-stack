@@ -66,8 +66,9 @@ show_main_menu() {
     echo "5. Docker Utilities"
     echo "6. Database Utilities"
     echo "7. Consoles"
+    echo "8. Audit secrets"
     echo ""
-    echo "Select option (1-7), or (q)uit:"
+    echo "Select option (1-8), or (q)uit:"
 }
 
 # Addons menu
@@ -93,7 +94,7 @@ show_addons_menu() {
 
 # Build docker compose command
 build_docker_command() {
-    local cmd="docker compose -f docker-compose.base.infrastructure.yaml -f docker-compose.base.override.yaml"
+    local cmd="docker compose --env-file .env --env-file secrets.env -f docker-compose.base.infrastructure.yaml -f docker-compose.base.override.yaml"
 
     # Add core processors and configuration
     if [[ $IS_GITHUB_DEPLOYMENT -eq 1 ]]; then
@@ -154,6 +155,15 @@ build_docker_command() {
 
 # Apply configuration and deploy
 apply_configuration() {
+    if [[ ! -f secrets.env ]]; then
+        echo ""
+        print_color $RED "secrets.env not found in $(pwd)."
+        echo "Copy secrets.env.template to secrets.env and fill it in (README.md, section 6)."
+        echo ""
+        read -p "Press Enter to continue..."
+        return 1
+    fi
+
     local cmd
     cmd=$(build_docker_command)
 
@@ -459,6 +469,13 @@ while true; do
         5) docker_utils ;;
         6) database_utils ;;
         7) consoles ;;
+        8)
+            clear
+            echo ""
+            bash ../utils/audit-secrets.sh "$(pwd)"
+            echo ""
+            read -p "Press Enter to continue..."
+            ;;
         q|Q)
             print_color $GREEN "Exiting..."
             exit 0
