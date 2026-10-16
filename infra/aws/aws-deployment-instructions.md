@@ -375,7 +375,7 @@ Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExten
 | `/tazama/creds/hasura/admin_secret` | `TAZAMA_HASURA_ADMIN_SECRET` | core | yes | |
 | `/tazama/creds/pgadmin/password` | `TAZAMA_PGADMIN_PASSWORD` | core, extensions | yes | First pgAdmin start only |
 | `/tazama/creds/apm/secret-token` | `TAZAMA_APM_SECRET_TOKEN` | core, extensions | no | Absent = empty |
-| `/tazama/creds/sftp/password` | `TAZAMA_SFTP_PASSWORD` | extensions | yes | No `:`; at most 15 bytes (connection-studio decrypt limit) |
+| `/tazama/creds/sftp/password` | `TAZAMA_SFTP_PASSWORD` | extensions | yes | At most 15 bytes (connection-studio decrypt limit) |
 | (derived) | `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | extensions | - | From the SFTP password and the enrichment key |
 | (derived) | `TAZAMA_SFTP_PASSWORD_HASH` | extensions | - | SHA-512 crypt hash of the SFTP password; salt from the password and the enrichment key |
 | `/tazama/creds/enrichment/encryption-key` | `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` | extensions | yes | Exactly 32 bytes; changing it makes stored credentials unreadable |

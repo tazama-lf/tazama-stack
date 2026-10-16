@@ -87,10 +87,6 @@ if ($templateKeys.Contains($cipherKey)) {
         Write-Host 'SFTP password check FAILED: TAZAMA_SFTP_PASSWORD must be at most 15 bytes (connection-studio decrypts longer values incorrectly).'
         $findings++
     }
-    if ($plainExpected -and $plainExpected.Contains(':')) {
-        Write-Host "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':'."
-        $findings++
-    }
     if ([string]::IsNullOrEmpty($payload) -or [string]::IsNullOrEmpty($plainExpected) -or [string]::IsNullOrEmpty($encryptionKey)) {
         Write-Host "SFTP ciphertext check skipped: $cipherKey, TAZAMA_SFTP_PASSWORD and TAZAMA_ENRICHMENT_ENCRYPTION_KEY must all be set."
         $findings++

@@ -282,7 +282,7 @@ On a local machine you can instead remove the stack's volumes (`docker compose .
 
 ## 6.6. Checking your setup
 
-Each launcher has an **Audit secrets** option. It compares your `secrets.env` with the template without printing any value, and reports missing, empty or unknown keys. For the extensions stack it also checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. The scripts can also be run directly from the repository root: `powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core` or `bash utils/audit-secrets.sh core`.
+Each launcher has an **Audit secrets** option. It compares your `secrets.env` with the template without printing any value, and reports missing, empty or unknown keys. For the extensions stack it also checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). The scripts can also be run directly from the repository root: `powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core` or `bash utils/audit-secrets.sh core`.
 
 ## 6.7. AWS deployment
 

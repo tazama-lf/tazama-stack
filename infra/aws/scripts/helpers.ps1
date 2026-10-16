@@ -382,7 +382,7 @@ function Set-BiarServiceEnvOverlay {
 #   - no single quote, CR or LF (all keys);
 #   - URL-embedded keys ($Script:SecretsUrlKeys): no whitespace and none of
 #     @ : / ? # % [ ] \ " (they would break the URL userinfo);
-#   - TAZAMA_SFTP_PASSWORD: no ':' and at most 15 bytes (connection-studio
+#   - TAZAMA_SFTP_PASSWORD: at most 15 bytes (connection-studio
 #     decrypts longer values incorrectly);
 #   - TAZAMA_NIFI_*: none of $ | & \ (NiFi's sed-based property substitution);
 #     the sensitive-props key needs at least 12 characters;
@@ -539,7 +539,6 @@ function Set-ServerSecretsEnv {
         if ($Script:SecretsUrlKeys -contains $key -and $v -match '[\s@:/?#%\[\]\\"]') {
             throw "$where contains whitespace or one of @ : / ? # % [ ] \ "" - not supported in a connection URL."
         }
-        if ($key -eq 'TAZAMA_SFTP_PASSWORD' -and $v -match ':') { throw "$where contains ':' - not supported." }
         if ($key -eq 'TAZAMA_SFTP_PASSWORD' -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ge 16) { throw "$where must be at most 15 bytes - connection-studio decrypts longer values incorrectly." }
         if ($key -like 'TAZAMA_NIFI_*' -and $v -match '[$|&\\]') { throw "$where contains one of `$ | & \ - not supported by NiFi. Use a hex value (openssl rand -hex 32)." }
         if ($key -eq 'TAZAMA_NIFI_SENSITIVE_PROPS_KEY' -and $v -and $v.Length -lt 12) { throw "$where must be at least 12 characters." }

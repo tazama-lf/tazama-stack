@@ -129,10 +129,6 @@ if in_template "$cipher_key"; then
         echo "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD must be at most 15 bytes (connection-studio decrypts longer values incorrectly)."
         findings=$((findings + 1))
     fi
-    if [[ "$expected" == *:* ]]; then
-        echo "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':'."
-        findings=$((findings + 1))
-    fi
     if [[ -z "$payload" || -z "$expected" || -z "$enc_key" ]]; then
         echo "SFTP ciphertext check skipped: $cipher_key, TAZAMA_SFTP_PASSWORD and TAZAMA_ENRICHMENT_ENCRYPTION_KEY must all be set."
         findings=$((findings + 1))

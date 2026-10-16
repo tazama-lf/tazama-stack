@@ -132,7 +132,7 @@ The launcher presents the following menu:
 Select option (1-6), or (q)uit:
 ```
 
-Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. See [root README section 6.6](../README.md#66-checking-your-setup).
+Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). See [root README section 6.6](../README.md#66-checking-your-setup).
 
 ## 4.1. Server A pre-flight: DEMS and DEAPI
 
