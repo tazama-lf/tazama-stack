@@ -83,6 +83,7 @@ if /i "%type%"=="7" (
 if /i "%type%"=="8" (
     goto :audit
 )
+goto :menu
 
 :addons
 set "choice="

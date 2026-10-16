@@ -121,6 +121,10 @@ if in_template "$cipher_key"; then
         echo "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD must be at most 15 bytes (connection-studio decrypts longer values incorrectly)."
         findings=$((findings + 1))
     fi
+    if [[ "$expected" == *:* ]]; then
+        echo "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':' (the sftp image reads user:password:uid)."
+        findings=$((findings + 1))
+    fi
     if [[ -z "$payload" || -z "$expected" || -z "$enc_key" ]]; then
         echo "SFTP ciphertext check skipped: $cipher_key, TAZAMA_SFTP_PASSWORD and TAZAMA_ENRICHMENT_ENCRYPTION_KEY must all be set."
         findings=$((findings + 1))
@@ -133,13 +137,13 @@ if in_template "$cipher_key"; then
         if [[ ${#key_hex} -ne 64 ]]; then
             echo "SFTP ciphertext check FAILED: TAZAMA_ENRICHMENT_ENCRYPTION_KEY is not exactly 32 bytes."
             findings=$((findings + 1))
-        elif [[ "$payload" != *:* || ! "$iv$cipher_hex" =~ ^[0-9a-fA-F]+$ || $(( ${#cipher_hex} % 2 )) -ne 0 ]]; then
-            echo "SFTP ciphertext check FAILED: $cipher_key is not in <iv-hex>:<ciphertext-hex> format."
+        elif [[ "$payload" != *:* || ${#iv} -ne 32 || ! "$iv$cipher_hex" =~ ^[0-9a-fA-F]+$ || $(( ${#cipher_hex} % 2 )) -ne 0 ]]; then
+            echo "SFTP ciphertext check FAILED: $cipher_key is not in <iv-hex>:<ciphertext-hex> format (16-byte IV)."
             findings=$((findings + 1))
-        elif ! result=$(printf "$(printf '%s' "$cipher_hex" | sed 's/../\\x&/g')" | openssl enc -d -aes-256-cbc -K "$key_hex" -iv "$iv" 2> /dev/null); then
+        elif ! result=$(printf "$(printf '%s' "$cipher_hex" | sed 's/../\\x&/g')" | openssl enc -d -aes-256-cbc -K "$key_hex" -iv "$iv" 2> /dev/null && printf x); then
             echo "SFTP ciphertext check FAILED: cannot decrypt $cipher_key."
             findings=$((findings + 1))
-        elif [[ "$result" == "$expected" ]]; then
+        elif result="${result%x}"; [[ "$result" == "$expected" ]]; then
             echo "SFTP ciphertext check OK: $cipher_key decrypts to TAZAMA_SFTP_PASSWORD."
         else
             echo "SFTP ciphertext check FAILED: $cipher_key does not decrypt to TAZAMA_SFTP_PASSWORD. Regenerate it (see the template)."

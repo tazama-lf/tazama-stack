@@ -375,7 +375,8 @@ function Set-BiarServiceEnvOverlay {
 # SSM reads and checks happen before the file is written:
 #   - required key ([required] in the template, or listed in
 #     $Script:SecretsAwsRequired) whose parameter is missing or empty: throw;
-#   - optional key whose parameter is missing: written empty.
+#   - optional key whose parameter is missing: written empty (listed in one
+#     info line, so a misspelled SSM name is visible).
 # Values are written single-quoted (KEY='value'). Compose reads single-quoted
 # dotenv values literally, so '$' needs no escaping. Value rules:
 #   - no single quote, CR or LF (all keys);
@@ -502,10 +503,12 @@ function Set-ServerSecretsEnv {
     }
 
     $values = [ordered]@{}
+    $absentOptional = @()
     foreach ($key in $keys.Keys) {
         $name = $Script:SecretsSsmMap[$key]
         if (-not $name) { continue }   # derived below
         $v = if ($ssm.ContainsKey($name)) { $ssm[$name] } else { '' }
+        if (-not $ssm.ContainsKey($name) -and -not $keys[$key]) { $absentOptional += "$key ($name)" }
         if (-not $v -and $keys[$key]) {
             throw "[$ServerLabel] $key ($Group/secrets.env): SSM parameter $name is missing or empty. Seed it first: aws ssm put-parameter --name $name --type SecureString --value <value> (see aws-deployment-instructions.md)."
         }
@@ -520,6 +523,9 @@ function Set-ServerSecretsEnv {
         if ($key -eq 'TAZAMA_NIFI_SENSITIVE_PROPS_KEY' -and $v -and $v.Length -lt 12) { throw "$where must be at least 12 characters." }
         if ($key -eq 'TAZAMA_ENRICHMENT_ENCRYPTION_KEY' -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ne 32) { throw "$where must be exactly 32 bytes (AES-256 key)." }
         $values[$key] = $v
+    }
+    if ($absentOptional) {
+        Write-Host "[$ServerLabel] Optional secrets not in SSM (rendered empty): $($absentOptional -join ', ')"
     }
     if ($keys.Contains('TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED')) {
         $values['TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED'] = Get-TcsSftpCiphertext `

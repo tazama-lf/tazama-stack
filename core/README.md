@@ -517,17 +517,17 @@ Check the [Postman repository readme](https://github.com/tazama-lf/postman#the-f
 ### If you want to restart or alter certain processors 
 
 Start/Restart individual services with
-`docker compose --env-file .env --env-file secrets.env up -p tazama -d --force-recreate <service>`    
+`docker compose --env-file .env --env-file secrets.env -p tazama-core -f <compose files> up -d --force-recreate <service>`    
 
 Try running following if changes are not reflecting  
-`docker compose --env-file .env --env-file secrets.env up -p tazama -d --build --force-recreate`  
+`docker compose --env-file .env --env-file secrets.env -p tazama-core -f <compose files> up -d --build --force-recreate`  
 
-Every `docker compose` command that reads compose files needs both env files (see [section 6.4 of the repository README](../README.md#64-running-docker-compose-by-hand)).
+Replace `-f <compose files>` with the same `-f` files the launcher used for your deployment. Every `docker compose` command that reads compose files needs both env files (see [section 6.4 of the repository README](../README.md#64-running-docker-compose-by-hand)).
 
 You can trash your container followed by deleting the image in docker if none of the above works.  
 
 ### Stopping individual (or multiple) services  
-`docker compose down <service> <service2> <service3>`
+`docker compose --env-file .env --env-file secrets.env -p tazama-core -f <compose files> down <service> <service2> <service3>`
 
 To easily idetify the name of a service, perform a
 

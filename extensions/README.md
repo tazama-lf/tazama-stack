@@ -132,7 +132,7 @@ The launcher presents the following menu:
 Select option (1-6), or (q)uit:
 ```
 
-Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD` and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). See [root README section 6.6](../README.md#66-checking-your-setup).
+Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD` and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. See [root README section 6.6](../README.md#66-checking-your-setup).
 
 ## 4.1. Server A pre-flight: DEMS and DEAPI
 
@@ -272,7 +272,7 @@ After a successful deployment, the following web interfaces are accessible from 
 - OpenSearch: <http://localhost:9200>
 - CouchDB: <http://localhost:5984>
 - Flowable: <http://localhost:8081>
-- SFTP: `sftp://localhost:12222` (user: `user`, password: `TAZAMA_SFTP_PASSWORD` from `extensions/secrets.env`)
+- SFTP: `sftp://localhost:12222` (user: `user`, password: `TAZAMA_SFTP_PASSWORD` from `extensions/secrets.env`). The `sftp` container log shows this password in plain text at startup, so treat that log as secret.
 - PostgreSQL (extensions): `localhost:15433`
 - pgAdmin (optional): <http://localhost:5051>
 
