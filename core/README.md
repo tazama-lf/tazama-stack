@@ -514,6 +514,8 @@ Check the [Postman repository readme](https://github.com/tazama-lf/postman#the-f
 
 # 5. TROUBLESHOOTING TIPS
 
+Run the `docker compose` commands in this section from the `core/` folder. Compose resolves the `--env-file` and `-f` paths against the current folder.
+
 ### If you want to restart or alter certain processors 
 
 Start/Restart individual services with
