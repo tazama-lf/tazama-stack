@@ -4,7 +4,8 @@
 # Audits <group>/secrets.env against <group>/secrets.env.template without
 # printing any value. Reports keys that are missing, required but empty, or
 # unknown, and checks that TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED decrypts to
-# TAZAMA_SFTP_PASSWORD (needs openssl). Exit code 0 = no findings, 1 = findings.
+# TAZAMA_SFTP_PASSWORD and that TAZAMA_SFTP_PASSWORD_HASH matches it (both
+# need openssl). Exit code 0 = no findings, 1 = findings.
 #
 # Usage: bash utils/audit-secrets.sh <group folder>
 
@@ -41,6 +42,7 @@ done < "$template"
 # secrets.env: KEY=VALUE lines; surrounding quotes are stripped. Never sourced.
 secret_keys=()
 secret_values=()
+secret_squoted=()
 while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
@@ -49,23 +51,29 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         value="${BASH_REMATCH[2]}"
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
+        squoted=0
+        [[ ${#value} -ge 2 && "${value:0:1}" == "'" && "${value: -1}" == "'" ]] && squoted=1
         if [[ ${#value} -ge 2 && ( ( "${value:0:1}" == '"' && "${value: -1}" == '"' ) || ( "${value:0:1}" == "'" && "${value: -1}" == "'" ) ) ]]; then
             value="${value:1:${#value}-2}"
         fi
         secret_keys+=("$key")
         secret_values+=("$value")
+        secret_squoted+=("$squoted")
     fi
 done < "$secrets"
 
-# Sets $found (0/1) and $found_value for a key; the last occurrence wins.
+# Sets $found (0/1), $found_value and $found_squoted (0/1) for a key; the last
+# occurrence wins.
 lookup_secret() {
     local i
     found=0
     found_value=""
+    found_squoted=0
     for i in "${!secret_keys[@]}"; do
         if [[ "${secret_keys[$i]}" == "$1" ]]; then
             found=1
             found_value="${secret_values[$i]}"
+            found_squoted="${secret_squoted[$i]}"
         fi
     done
 }
@@ -122,7 +130,7 @@ if in_template "$cipher_key"; then
         findings=$((findings + 1))
     fi
     if [[ "$expected" == *:* ]]; then
-        echo "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':' (the sftp image reads user:password:uid)."
+        echo "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':'."
         findings=$((findings + 1))
     fi
     if [[ -z "$payload" || -z "$expected" || -z "$enc_key" ]]; then
@@ -149,6 +157,35 @@ if in_template "$cipher_key"; then
             echo "SFTP ciphertext check FAILED: $cipher_key does not decrypt to TAZAMA_SFTP_PASSWORD. Regenerate it (see the template)."
             findings=$((findings + 1))
         fi
+    fi
+    echo ""
+fi
+
+hash_key=TAZAMA_SFTP_PASSWORD_HASH
+hash_re='^\$6\$(rounds=([0-9]+)\$)?([^$:]{1,16})\$[./0-9A-Za-z]{86}$'
+if in_template "$hash_key"; then
+    lookup_secret "$hash_key"; hash="$found_value"; hash_squoted="$found_squoted"
+    lookup_secret TAZAMA_SFTP_PASSWORD; expected="$found_value"
+    if [[ -z "$hash" || -z "$expected" ]]; then
+        echo "SFTP hash check skipped: $hash_key and TAZAMA_SFTP_PASSWORD must both be set."
+        findings=$((findings + 1))
+    elif [[ "$hash_squoted" != 1 ]]; then
+        echo "SFTP hash check FAILED: write $hash_key in single quotes ($hash_key='...'), or Compose expands its \$ signs."
+        findings=$((findings + 1))
+    elif [[ ! "$hash" =~ $hash_re ]]; then
+        echo "SFTP hash check FAILED: $hash_key is not a SHA-512 crypt hash (\$6\$<salt>\$<hash>). Regenerate it (see the template)."
+        findings=$((findings + 1))
+    elif [[ -n "${BASH_REMATCH[1]}" ]]; then
+        echo "SFTP hash check skipped: hashes with rounds= are not supported by this check."
+    elif ! command -v openssl > /dev/null 2>&1; then
+        echo "SFTP hash check skipped: openssl not found."
+    elif ! computed=$(printf '%s\n' "$expected" | openssl passwd -6 -salt "${BASH_REMATCH[3]}" -stdin 2> /dev/null); then
+        echo "SFTP hash check skipped: this openssl does not support 'passwd -6' (needs OpenSSL 1.1.1 or later)."
+    elif [[ "${computed%$'\r'}" == "$hash" ]]; then
+        echo "SFTP hash check OK: $hash_key matches TAZAMA_SFTP_PASSWORD."
+    else
+        echo "SFTP hash check FAILED: $hash_key does not match TAZAMA_SFTP_PASSWORD. Regenerate it (see the template)."
+        findings=$((findings + 1))
     fi
     echo ""
 fi

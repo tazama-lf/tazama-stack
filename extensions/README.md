@@ -132,7 +132,7 @@ The launcher presents the following menu:
 Select option (1-6), or (q)uit:
 ```
 
-Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD` and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. See [root README section 6.6](../README.md#66-checking-your-setup).
+Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. See [root README section 6.6](../README.md#66-checking-your-setup).
 
 ## 4.1. Server A pre-flight: DEMS and DEAPI
 
@@ -272,7 +272,7 @@ After a successful deployment, the following web interfaces are accessible from 
 - OpenSearch: <http://localhost:9200>
 - CouchDB: <http://localhost:5984>
 - Flowable: <http://localhost:8081>
-- SFTP: `sftp://localhost:12222` (user: `user`, password: `TAZAMA_SFTP_PASSWORD` from `extensions/secrets.env`). The `sftp` container log shows this password in plain text at startup, so treat that log as secret.
+- SFTP: `sftp://localhost:12222` (user: `user`, password: `TAZAMA_SFTP_PASSWORD` from `extensions/secrets.env`). The `sftp` container receives only its hash, `TAZAMA_SFTP_PASSWORD_HASH`.
 - PostgreSQL (extensions): `localhost:15433`
 - pgAdmin (optional): <http://localhost:5051>
 
@@ -353,7 +353,8 @@ Before `secrets.env` existed, these values were committed in the compose and env
 | `TAZAMA_CORE_PG_PASSWORD` | `unused` | connection-studio, DEAPI, DEMS |
 | `TAZAMA_VALKEY_PASSWORD` | `redis-password` (Valkey had no password before) | DEAPI, DEMS, CMS, rule-studio |
 | `TAZAMA_PGADMIN_PASSWORD` | `password` | extensions pgAdmin |
-| `TAZAMA_SFTP_PASSWORD` | `password` | sftp |
+| `TAZAMA_SFTP_PASSWORD` | `password` | source of the two keys below (no container reads it directly) |
+| `TAZAMA_SFTP_PASSWORD_HASH` | `'$6$tazamadefault$Q5r5hP4JCyXsKOlkUduv2m/urCS/YaekDWkNhUMIvhLHpRzi6fIqXJF.7TPBrzbJRzgFdKgStAjQQ1KuVgCV6/'` (`password` as a SHA-512 crypt hash; new key, keep the single quotes) | sftp |
 | `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | `5af1a07c4d63493121dfc55c33c8c1f2:245d2f2b4b0d373de787c8dac373d9fe` (`password` encrypted with the key below) | connection-studio |
 | `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` | `8fj29dkd82hs91kd93kd82hs91kd83ks` | connection-studio, DEAPI |
 | `TAZAMA_FLOWABLE_PASSWORD` | `test` | Flowable, CMS |

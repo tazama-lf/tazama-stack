@@ -349,7 +349,7 @@ Every credential is a `TAZAMA_*` key in one `secrets.env` file per component gro
 - The key list comes from the group's committed `secrets.env.template`. A template key without an SSM mapping in `$Script:SecretsSsmMap` (`helpers.ps1`) stops the deploy.
 - Values are read with batched `aws ssm get-parameters --with-decryption`. A missing or empty parameter for a `[required]` key stops the deploy. The four NiFi keys are `[optional]` in the template (local `NIFI_AUTH=none` needs none of them) but required on AWS, which always runs NiFi in keycloak mode.
 - Each value is validated (rules in the table below), written as `KEY='value'` (single-quoted, so `$` stays literal), piped over SSH stdin (never on a command line) and stored with mode 600. No value is printed.
-- `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` has no parameter: it is derived from the SFTP password and the enrichment key in connection-studio's AES-256-CBC format.
+- `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` and `TAZAMA_SFTP_PASSWORD_HASH` have no parameter: they are derived from the SFTP password and the enrichment key, the first in connection-studio's AES-256-CBC format, the second as the SHA-512 crypt hash the `sftp` container receives (so its startup log shows no plain password). Both use a deterministic IV or salt, so they only change when an input changes.
 - Every compose command on the servers passes `--env-file .env --env-file secrets.env`.
 
 Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExtensionsOverlay`, `extensions/` for DEMS/DEAPI; B: `extensions/`; C: `biar/`), in `deploy-extensions.ps1` (A and B), and in `restart-service.ps1` / `deploy-service.ps1` before every compose call (dry runs excepted). The server files therefore always match SSM. The former `-Password` parameter of `deploy.ps1`, `deploy-core.ps1` and `deploy-extensions.ps1` is gone.
@@ -377,6 +377,7 @@ Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExten
 | `/tazama/creds/apm/secret-token` | `TAZAMA_APM_SECRET_TOKEN` | core, extensions | no | Absent = empty |
 | `/tazama/creds/sftp/password` | `TAZAMA_SFTP_PASSWORD` | extensions | yes | No `:`; at most 15 bytes (connection-studio decrypt limit) |
 | (derived) | `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | extensions | - | From the SFTP password and the enrichment key |
+| (derived) | `TAZAMA_SFTP_PASSWORD_HASH` | extensions | - | SHA-512 crypt hash of the SFTP password; salt from the password and the enrichment key |
 | `/tazama/creds/enrichment/encryption-key` | `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` | extensions | yes | Exactly 32 bytes; changing it makes stored credentials unreadable |
 | `/tazama/creds/flowable/password` | `TAZAMA_FLOWABLE_PASSWORD` | extensions | yes | First Flowable start only (`rest-admin`) |
 | `/tazama/creds/opensearch/admin_password` | `TAZAMA_OPENSEARCH_PASSWORD` | extensions | yes | Not checked while the security plugin is off (A.6) |
@@ -3146,7 +3147,7 @@ All other services (Valkey, CouchDB, Hasura, pgAdmin, auth client secret, relay 
 - **Auth client secret, relay password, JupyterHub and NiFi client secrets:** change the matching realm client or user in Keycloak at the same time.
 - **CouchDB admin:** the container writes the admin from its env into a config file that is not kept on a volume. A changed value recreates the container, which applies the new admin and drops the old one. Open sessions end.
 - **Enrichment encryption key:** data the enrichment service encrypted with the old key cannot be decrypted with the new one; re-enter it after the change.
-- **SFTP password:** applied when the container is recreated, which a changed value triggers; external SFTP clients need the new value. `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` is re-derived automatically.
+- **SFTP password:** applied when the container is recreated, which a changed value triggers; external SFTP clients need the new value. `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` and `TAZAMA_SFTP_PASSWORD_HASH` are re-derived automatically.
 
 ```powershell
 aws ssm put-parameter --name /tazama/creds/<service>/<name> --type SecureString `

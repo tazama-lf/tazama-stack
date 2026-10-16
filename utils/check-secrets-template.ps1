@@ -7,12 +7,15 @@
 # reference uses the fail-fast form matching the template tag:
 # [required] -> ${KEY:?...}, [optional] -> ${KEY?...}.
 # Keys defined in the group's .env (plain configuration, e.g. TAZAMA_VERSION)
-# are ignored. Exit code 0 = consistent, 1 = mismatches.
+# are ignored. Source-only keys (no file references them; other keys are
+# derived from them and the audit checks those) are exempt from the "never
+# referenced" check. Exit code 0 = consistent, 1 = mismatches.
 #
 # Usage: pwsh -NoProfile -File utils/check-secrets-template.ps1
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $failures = 0
+$sourceOnlyKeys = @('TAZAMA_SFTP_PASSWORD')
 
 function Write-Finding([string]$title, [string[]]$keys) {
     if ($keys.Count -eq 0) { return }
@@ -80,7 +83,7 @@ foreach ($group in 'core', 'extensions', 'biar') {
     }
 
     Write-Finding 'Referenced but not in secrets.env.template:' @($refs.Keys | Where-Object { -not $template.ContainsKey($_) })
-    Write-Finding 'In secrets.env.template but never referenced:' @($template.Keys | Where-Object { -not $refs.ContainsKey($_) })
+    Write-Finding 'In secrets.env.template but never referenced:' @($template.Keys | Where-Object { -not $refs.ContainsKey($_) -and $sourceOnlyKeys -notcontains $_ })
     Write-Finding 'Reference form:' $badForm
     Write-Finding 'In secrets.env.template but not in the README defaults table:' @($template.Keys | Where-Object { -not $readmeKeys.ContainsKey($_) })
     Write-Finding 'In the README defaults table but not in secrets.env.template:' @($readmeKeys.Keys | Where-Object { -not $template.ContainsKey($_) })

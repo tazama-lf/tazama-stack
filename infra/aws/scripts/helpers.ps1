@@ -382,13 +382,14 @@ function Set-BiarServiceEnvOverlay {
 #   - no single quote, CR or LF (all keys);
 #   - URL-embedded keys ($Script:SecretsUrlKeys): no whitespace and none of
 #     @ : / ? # % [ ] \ " (they would break the URL userinfo);
-#   - TAZAMA_SFTP_PASSWORD: no ':' (atmoz/sftp user:pass:uid syntax) and at
-#     most 15 bytes (connection-studio decrypts longer values incorrectly);
+#   - TAZAMA_SFTP_PASSWORD: no ':' and at most 15 bytes (connection-studio
+#     decrypts longer values incorrectly);
 #   - TAZAMA_NIFI_*: none of $ | & \ (NiFi's sed-based property substitution);
 #     the sensitive-props key needs at least 12 characters;
 #   - TAZAMA_ENRICHMENT_ENCRYPTION_KEY: exactly 32 bytes (AES-256 key).
-# TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED is derived locally from the SFTP password
-# and the enrichment key (see Get-TcsSftpCiphertext).
+# TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED and TAZAMA_SFTP_PASSWORD_HASH are derived
+# locally from the SFTP password and the enrichment key (see
+# Get-TcsSftpCiphertext and Get-SftpPasswordHash).
 # The content is piped over ssh stdin (no secret on any command line) and
 # written with mode 600. No value is ever printed.
 $Script:SecretsSsmMap = [ordered]@{
@@ -410,6 +411,7 @@ $Script:SecretsSsmMap = [ordered]@{
     TAZAMA_APM_SECRET_TOKEN              = '/tazama/creds/apm/secret-token'
     TAZAMA_SFTP_PASSWORD                 = '/tazama/creds/sftp/password'
     TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED   = $null   # derived, see Get-TcsSftpCiphertext
+    TAZAMA_SFTP_PASSWORD_HASH            = $null   # derived, see Get-SftpPasswordHash
     TAZAMA_ENRICHMENT_ENCRYPTION_KEY     = '/tazama/creds/enrichment/encryption-key'
     TAZAMA_FLOWABLE_PASSWORD             = '/tazama/creds/flowable/password'
     TAZAMA_OPENSEARCH_PASSWORD           = '/tazama/creds/opensearch/admin_password'
@@ -466,6 +468,26 @@ function Get-TcsSftpCiphertext {
     return "$(& $toHex $iv):$(& $toHex $cipher)"
 }
 
+# -- Get-SftpPasswordHash (internal) ------------------------------------------
+# SHA-512 crypt hash of the SFTP password for the atmoz/sftp user definition
+# (user:<hash>:e:uid), so the container log shows no plain password (#301).
+# The 16-character salt is deterministic (SHA-256 over a fixed prefix, the
+# enrichment key and the password), so the value only changes when an input
+# changes and the sftp container is not recreated on every deploy. The key in
+# the salt input keeps the salt from being a public function of the password.
+. (Join-Path $PSScriptRoot '..\..\..\utils\sha512-crypt.ps1')
+function Get-SftpPasswordHash {
+    param([string]$Password, [string]$Key)
+
+    $itoa = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("sftp-hash-salt:$Key$Password"))
+    } finally { $sha.Dispose() }
+    $salt = -join (0..15 | ForEach-Object { $itoa[$digest[$_] -band 63] })
+    return Get-Sha512Crypt -Password $Password -Salt $salt
+}
+
 function Set-ServerSecretsEnv {
     param(
         [Parameter(Mandatory)][string]$InstanceId,
@@ -517,7 +539,7 @@ function Set-ServerSecretsEnv {
         if ($Script:SecretsUrlKeys -contains $key -and $v -match '[\s@:/?#%\[\]\\"]') {
             throw "$where contains whitespace or one of @ : / ? # % [ ] \ "" - not supported in a connection URL."
         }
-        if ($key -eq 'TAZAMA_SFTP_PASSWORD' -and $v -match ':') { throw "$where contains ':' - not supported by the SFTP user definition." }
+        if ($key -eq 'TAZAMA_SFTP_PASSWORD' -and $v -match ':') { throw "$where contains ':' - not supported." }
         if ($key -eq 'TAZAMA_SFTP_PASSWORD' -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ge 16) { throw "$where must be at most 15 bytes - connection-studio decrypts longer values incorrectly." }
         if ($key -like 'TAZAMA_NIFI_*' -and $v -match '[$|&\\]') { throw "$where contains one of `$ | & \ - not supported by NiFi. Use a hex value (openssl rand -hex 32)." }
         if ($key -eq 'TAZAMA_NIFI_SENSITIVE_PROPS_KEY' -and $v -and $v.Length -lt 12) { throw "$where must be at least 12 characters." }
@@ -529,6 +551,10 @@ function Set-ServerSecretsEnv {
     }
     if ($keys.Contains('TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED')) {
         $values['TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED'] = Get-TcsSftpCiphertext `
+            -Password $values['TAZAMA_SFTP_PASSWORD'] -Key $values['TAZAMA_ENRICHMENT_ENCRYPTION_KEY']
+    }
+    if ($keys.Contains('TAZAMA_SFTP_PASSWORD_HASH')) {
+        $values['TAZAMA_SFTP_PASSWORD_HASH'] = Get-SftpPasswordHash `
             -Password $values['TAZAMA_SFTP_PASSWORD'] -Key $values['TAZAMA_ENRICHMENT_ENCRYPTION_KEY']
     }
 

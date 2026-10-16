@@ -8,12 +8,15 @@
 # reference uses the fail-fast form matching the template tag:
 # [required] -> ${KEY:?...}, [optional] -> ${KEY?...}.
 # Keys defined in the group's .env (plain configuration, e.g. TAZAMA_VERSION)
-# are ignored. Exit code 0 = consistent, 1 = mismatches.
+# are ignored. Source-only keys (no file references them; other keys are
+# derived from them and the audit checks those) are exempt from the "never
+# referenced" check. Exit code 0 = consistent, 1 = mismatches.
 #
 # Usage: bash utils/check-secrets-template.sh
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 failures=0
+source_only_keys='TAZAMA_SFTP_PASSWORD'
 
 # Prints a titled list of unique lines from stdin; counts them as failures.
 finding() {
@@ -64,7 +67,7 @@ for group in core extensions biar; do
         }' | sort -u)
 
     finding 'Referenced but not in secrets.env.template:' < <(comm -23 <(printf '%s\n' "$ref_keys") <(printf '%s\n' "$template_keys"))
-    finding 'In secrets.env.template but never referenced:' < <(comm -13 <(printf '%s\n' "$ref_keys") <(printf '%s\n' "$template_keys"))
+    finding 'In secrets.env.template but never referenced:' < <(comm -13 <(printf '%s\n' "$ref_keys") <(printf '%s\n' "$template_keys") | grep -vxF "$source_only_keys")
     finding 'Reference form:' < <(printf '%s\n' "$refs" | while read -r file key modifier; do
         [[ -z "$key" ]] && continue
         case "$modifier" in

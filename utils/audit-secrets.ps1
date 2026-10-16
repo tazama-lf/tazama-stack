@@ -3,7 +3,8 @@
 # Audits <group>/secrets.env against <group>/secrets.env.template without
 # printing any value. Reports keys that are missing, required but empty, or
 # unknown, and checks that TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED decrypts to
-# TAZAMA_SFTP_PASSWORD. Exit code 0 = no findings, 1 = findings.
+# TAZAMA_SFTP_PASSWORD and that TAZAMA_SFTP_PASSWORD_HASH matches it.
+# Exit code 0 = no findings, 1 = findings.
 #
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core
 # Runs on Windows PowerShell 5.1 and PowerShell 7.
@@ -37,14 +38,17 @@ foreach ($line in Get-Content $templatePath) {
 
 # secrets.env: KEY=VALUE lines; surrounding quotes are stripped.
 $values = @{}
+$singleQuoted = @{}
 foreach ($line in Get-Content $secretsPath) {
     if ($line -match '^\s*(#|$)') { continue }
     if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$') {
+        $key = $Matches[1]
         $value = $Matches[2].Trim()
+        $singleQuoted[$key] = $value.Length -ge 2 -and $value[0] -eq "'" -and $value[-1] -eq "'"
         if ($value.Length -ge 2 -and (($value[0] -eq '"' -and $value[-1] -eq '"') -or ($value[0] -eq "'" -and $value[-1] -eq "'"))) {
             $value = $value.Substring(1, $value.Length - 2)
         }
-        $values[$Matches[1]] = $value
+        $values[$key] = $value
     }
 }
 
@@ -84,7 +88,7 @@ if ($templateKeys.Contains($cipherKey)) {
         $findings++
     }
     if ($plainExpected -and $plainExpected.Contains(':')) {
-        Write-Host "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':' (the sftp image reads user:password:uid)."
+        Write-Host "SFTP password check FAILED: TAZAMA_SFTP_PASSWORD contains ':'."
         $findings++
     }
     if ([string]::IsNullOrEmpty($payload) -or [string]::IsNullOrEmpty($plainExpected) -or [string]::IsNullOrEmpty($encryptionKey)) {
@@ -119,6 +123,37 @@ if ($templateKeys.Contains($cipherKey)) {
                 Write-Host "SFTP ciphertext check FAILED: $cipherKey does not decrypt to TAZAMA_SFTP_PASSWORD. Regenerate it (see the template)."
                 $findings++
             }
+        }
+    }
+    Write-Host ''
+}
+
+$hashKey = 'TAZAMA_SFTP_PASSWORD_HASH'
+if ($templateKeys.Contains($hashKey)) {
+    $hash = $values[$hashKey]
+    $plainExpected = $values['TAZAMA_SFTP_PASSWORD']
+    if ([string]::IsNullOrEmpty($hash) -or [string]::IsNullOrEmpty($plainExpected)) {
+        Write-Host "SFTP hash check skipped: $hashKey and TAZAMA_SFTP_PASSWORD must both be set."
+        $findings++
+    }
+    elseif (-not $singleQuoted[$hashKey]) {
+        Write-Host "SFTP hash check FAILED: write $hashKey in single quotes ($hashKey='...'), or Compose expands its `$ signs."
+        $findings++
+    }
+    elseif ($hash -cnotmatch '^\$6\$(rounds=([0-9]+)\$)?([^$:]{1,16})\$[./0-9A-Za-z]{86}$') {
+        Write-Host "SFTP hash check FAILED: $hashKey is not a SHA-512 crypt hash (`$6`$<salt>`$<hash>). Regenerate it (see the template)."
+        $findings++
+    }
+    else {
+        $rounds = if ($Matches[2]) { [int]$Matches[2] } else { 5000 }
+        $salt = $Matches[3]
+        . (Join-Path $PSScriptRoot 'sha512-crypt.ps1')
+        if ((Get-Sha512Crypt -Password $plainExpected -Salt $salt -Rounds $rounds) -ceq $hash) {
+            Write-Host "SFTP hash check OK: $hashKey matches TAZAMA_SFTP_PASSWORD."
+        }
+        else {
+            Write-Host "SFTP hash check FAILED: $hashKey does not match TAZAMA_SFTP_PASSWORD. Regenerate it (see the template)."
+            $findings++
         }
     }
     Write-Host ''

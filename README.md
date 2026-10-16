@@ -230,7 +230,7 @@ Some credentials are used by more than one stack. The key has the same name in e
 
 ## 6.3. Value rules
 
-- No spaces, quotes or `$` in any value. Docker Compose reads `secrets.env` as a dotenv file and would strip quotes or expand `$`.
+- No spaces, quotes or `$` in any value. Docker Compose reads `secrets.env` as a dotenv file and would strip quotes or expand `$`. The one exception is `TAZAMA_SFTP_PASSWORD_HASH` (extensions): it contains `$` and must be written in single quotes, which Compose reads literally.
 - The Postgres and CouchDB keys are placed inside connection URLs as they are. Use only letters, digits and `-` `_` `.` `~` for them.
 - Some keys have their own rules (length, allowed characters, derived values); see the comment above the key in the template.
 - To generate a random value: `openssl rand -hex 24` (bash) or `[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLower()` (PowerShell 7).
@@ -282,7 +282,7 @@ On a local machine you can instead remove the stack's volumes (`docker compose .
 
 ## 6.6. Checking your setup
 
-Each launcher has an **Audit secrets** option. It compares your `secrets.env` with the template without printing any value, and reports missing, empty or unknown keys. For the extensions stack it also checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. The scripts can also be run directly from the repository root: `powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core` or `bash utils/audit-secrets.sh core`.
+Each launcher has an **Audit secrets** option. It compares your `secrets.env` with the template without printing any value, and reports missing, empty or unknown keys. For the extensions stack it also checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly) and contains no `:`. The scripts can also be run directly from the repository root: `powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core` or `bash utils/audit-secrets.sh core`.
 
 ## 6.7. AWS deployment
 
