@@ -22,6 +22,7 @@
   - [8.1. Authentication public key](#81-authentication-public-key)
   - [8.2. Docker Compose YAML structure](#82-docker-compose-yaml-structure)
   - [8.3. Original default values](#83-original-default-values)
+  - [8.4. Generating the SFTP values by hand](#84-generating-the-sftp-values-by-hand)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -88,7 +89,7 @@ On a single machine, Server A and Server B are both `localhost`. Run the pre-fli
 
 # 4. INSTALLATION STEPS
 
-Before the first deployment, create `extensions/secrets.env` from the template and fill in every `[required]` key (on Server A as well: DEMS and DEAPI read it). The file is gitignored. See [root README section 6](../README.md#6-secrets) for the rules and the keys that must match `core/secrets.env` and `biar/secrets.env`; the public test values the stack used before are listed in [Section 8.3](#83-original-default-values).
+Before the first deployment, create `extensions/secrets.env` from the template and fill in every `[required]` key (on Server A as well: DEMS and DEAPI read it). Leave the two `[generated]` keys empty: the launcher derives them from `TAZAMA_SFTP_PASSWORD` (Section 4.2). The file is gitignored. See [root README section 6](../README.md#6-secrets) for the rules and the keys that must match `core/secrets.env` and `biar/secrets.env`; the public test values the stack used before are listed in [Section 8.3](#83-original-default-values).
 
 ```powershell
 Copy-Item secrets.env.template secrets.env
@@ -132,7 +133,7 @@ The launcher presents the following menu:
 Select option (1-6), or (q)uit:
 ```
 
-Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). See [root README section 6.6](../README.md#66-checking-your-setup).
+Option 6 compares `secrets.env` with the template without deploying anything or printing any value: it reports missing, empty (required keys only) or unknown keys, and checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). Empty `[generated]` keys are not a finding: options 3 and 4 fill them in. See [root README section 6.6](../README.md#66-checking-your-setup).
 
 ## 4.1. Server A pre-flight: DEMS and DEAPI
 
@@ -170,6 +171,13 @@ Include pgAdmin? [y/N]:
 pgAdmin is an optional add-on. See Section 5.2 for details.
 
 The launcher also automatically copies `../core/auth/test-public-key.pem` into `./auth/` if it is not already present. TCS and TRS require this key for JWT validation.
+
+Before it runs Docker Compose, the launcher brings the two values derived from `TAZAMA_SFTP_PASSWORD` in `secrets.env` up to date (`utils/sftp-derived-secrets.ps1` or `.sh`):
+
+- `TAZAMA_SFTP_PASSWORD_HASH`: the SHA-512 crypt hash the `sftp` container receives;
+- `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED`: the password encrypted with `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` for connection-studio.
+
+A value that already matches the password is kept, including one you made by hand. An empty or outdated value is derived again and its line in `secrets.env` is rewritten; the launcher prints which key it updated, never the value. The password is processed on this machine only: it does not appear on a command line or in a container. If `TAZAMA_SFTP_PASSWORD` is empty or longer than 15 bytes, or `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` is not exactly 32 bytes, the launcher stops before deploying. On Linux and macOS this step needs `openssl`; where it has no `passwd -6` (LibreSSL on macOS), the hash is computed in the `atmoz/sftp` image, with the password passed on standard input.
 
 | Option | Build source |
 |---|---|
@@ -354,8 +362,8 @@ Before `secrets.env` existed, these values were committed in the compose and env
 | `TAZAMA_VALKEY_PASSWORD` | `redis-password` (Valkey had no password before) | DEAPI, DEMS, CMS, rule-studio |
 | `TAZAMA_PGADMIN_PASSWORD` | `password` | extensions pgAdmin |
 | `TAZAMA_SFTP_PASSWORD` | `password` | source of the two keys below (no container reads it directly) |
-| `TAZAMA_SFTP_PASSWORD_HASH` | `'$6$tazamadefault$Q5r5hP4JCyXsKOlkUduv2m/urCS/YaekDWkNhUMIvhLHpRzi6fIqXJF.7TPBrzbJRzgFdKgStAjQQ1KuVgCV6/'` (`password` as a SHA-512 crypt hash; new key, keep the single quotes) | sftp |
-| `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | `5af1a07c4d63493121dfc55c33c8c1f2:245d2f2b4b0d373de787c8dac373d9fe` (`password` encrypted with the key below) | connection-studio |
+| `TAZAMA_SFTP_PASSWORD_HASH` | `'$6$tazamadefault$Q5r5hP4JCyXsKOlkUduv2m/urCS/YaekDWkNhUMIvhLHpRzi6fIqXJF.7TPBrzbJRzgFdKgStAjQQ1KuVgCV6/'` (`password` as a SHA-512 crypt hash; new key, generated by the launcher - leave it empty, or use this value in single quotes) | sftp |
+| `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` | `5af1a07c4d63493121dfc55c33c8c1f2:245d2f2b4b0d373de787c8dac373d9fe` (`password` encrypted with the key below; generated by the launcher - leave it empty, or use this value) | connection-studio |
 | `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` | `8fj29dkd82hs91kd93kd82hs91kd83ks` | connection-studio, DEAPI |
 | `TAZAMA_FLOWABLE_PASSWORD` | `test` | Flowable, CMS |
 | `TAZAMA_OPENSEARCH_PASSWORD` | `admin` | CMS, connection-studio, rule-studio |
@@ -367,5 +375,59 @@ Before `secrets.env` existed, these values were committed in the compose and env
 | `TAZAMA_SMTP_USER` | (empty) | CMS, connection-studio |
 | `TAZAMA_SMTP_PASS` | (empty) | CMS, connection-studio |
 | `TAZAMA_APM_SECRET_TOKEN` | (empty) | DEAPI |
+
+<div style="text-align: right"><a href="#top">Top</a></div>
+
+## 8.4. Generating the SFTP values by hand
+
+The launcher derives `TAZAMA_SFTP_PASSWORD_HASH` and `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` from `TAZAMA_SFTP_PASSWORD` before every deployment of the extensions stack (Section 4.2). You need this section only if you run `docker compose` yourself, or prefer to make the values yourself.
+
+The quickest way is the launcher's own step, which updates `secrets.env` without deploying anything. Run it from the repository root:
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File utils/sftp-derived-secrets.ps1 -GroupDir extensions   # Windows
+bash utils/sftp-derived-secrets.sh extensions                                                           # Linux, macOS, Git Bash
+```
+
+To make the values entirely by hand, use one of the procedures below. They prompt for the password without showing it, so it does not end up on a command line, in your shell history or in a container. They read `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` from `secrets.env`, so set that key first. Run them from the `extensions/` folder, with the same password as `TAZAMA_SFTP_PASSWORD` (at most 15 bytes). Each one prints two lines; replace the two keys in `secrets.env` with them, then run the launcher's **Audit secrets** option to check the result.
+
+Values made by hand use a random salt and IV, so they differ from the ones the launcher derives. The launcher keeps them anyway, because it only replaces values that do not match the password.
+
+**bash with OpenSSL 1.1.1 or later (Linux, WSL, Git Bash):**
+
+```bash
+read -rsp 'SFTP password: ' P; echo
+KEY=$(sed -n 's/^TAZAMA_ENRICHMENT_ENCRYPTION_KEY=//p' secrets.env | tail -n 1 | tr -d "\r'\"")
+SALT=$(openssl rand -hex 8)
+HASH=$(printf '%s\n' "$P" | openssl passwd -6 -salt "$SALT" -stdin)
+IV=$(openssl rand -hex 16)
+CT=$(printf '%s' "$P" | openssl enc -aes-256-cbc -K "$(printf '%s' "$KEY" | od -An -v -tx1 | tr -d ' \n')" -iv "$IV" | od -An -v -tx1 | tr -d ' \n')
+echo "TAZAMA_SFTP_PASSWORD_HASH='$HASH'"
+echo "TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED=$IV:$CT"
+unset P KEY SALT HASH IV CT
+```
+
+The password reaches `openssl` on standard input only. The encryption key is passed to `openssl enc` as an argument (`-K`), so other users of the same machine could see it in the process list for that moment.
+
+**PowerShell 5.1 or 7 (Windows):**
+
+```powershell
+. ..\utils\sha512-crypt.ps1   # SHA-512 crypt function (Windows has none built in)
+$s = Read-Host 'SFTP password' -AsSecureString
+$b = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
+$p = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($b); [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)
+$key = (Get-Content secrets.env | Where-Object { $_ -match '^TAZAMA_ENRICHMENT_ENCRYPTION_KEY=' } | Select-Object -Last 1) -replace '^[^=]+=', '' -replace '^[''"]|[''"]$', ''
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rb = New-Object byte[] 16; $rng.GetBytes($rb)
+$salt = -join ($rb | ForEach-Object { './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[$_ -band 63] })
+$aes = [Security.Cryptography.Aes]::Create(); $aes.Key = [Text.Encoding]::UTF8.GetBytes($key); $aes.GenerateIV()
+$pb = [Text.Encoding]::UTF8.GetBytes($p)
+$ct = $aes.CreateEncryptor().TransformFinalBlock($pb, 0, $pb.Length)
+"TAZAMA_SFTP_PASSWORD_HASH='$(Get-Sha512Crypt -Password $p -Salt $salt)'"
+"TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED=$(-join ($aes.IV | ForEach-Object { $_.ToString('x2') })):$(-join ($ct | ForEach-Object { $_.ToString('x2') }))"
+Remove-Variable s, b, p, key, pb, ct
+```
+
+`Aes` uses CBC mode and PKCS7 padding by default, as connection-studio expects. Everything runs inside PowerShell; the history records the commands, not the password.
 
 <div style="text-align: right"><a href="#top">Top</a></div>

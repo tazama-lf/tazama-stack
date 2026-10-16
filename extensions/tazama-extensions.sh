@@ -93,6 +93,16 @@ deploy_extensions() {
         fi
     fi
 
+    # Derive the SFTP hash and encrypted password from TAZAMA_SFTP_PASSWORD (README.md, section 6)
+    echo ""
+    if ! bash ../utils/sftp-derived-secrets.sh "$(pwd)"; then
+        echo ""
+        echo " ERROR: fix secrets.env and retry."
+        echo ""
+        pause
+        return 1
+    fi
+
     local cmd="$COMPOSE -p $EXTENSIONS_PROJECT"
     cmd="$cmd -f ./docker-compose.extensions.infrastructure.yaml"
     if [[ "$build_type" == "dev" ]]; then

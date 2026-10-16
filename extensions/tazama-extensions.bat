@@ -97,6 +97,17 @@ if not exist ".\auth\test-public-key.pem" (
     )
 )
 
+:: Derive the SFTP hash and encrypted password from TAZAMA_SFTP_PASSWORD (README.md, section 6)
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\utils\sftp-derived-secrets.ps1" -GroupDir "%CD%"
+if errorlevel 1 (
+    echo.
+    echo  ERROR: fix secrets.env and retry.
+    echo.
+    pause
+    goto :menu
+)
+
 set "cmd=!COMPOSE! -p tazama-extensions"
 set "cmd=!cmd! -f ./docker-compose.extensions.infrastructure.yaml"
 if "%BUILD_TYPE%"=="dev" (

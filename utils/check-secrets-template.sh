@@ -6,7 +6,7 @@
 # the keys in secrets.env.template and with the "Original default values"
 # table in the group README, in both directions. Also checks that each
 # reference uses the fail-fast form matching the template tag:
-# [required] -> ${KEY:?...}, [optional] -> ${KEY?...}.
+# [required] or [generated] -> ${KEY:?...}, [optional] -> ${KEY?...}.
 # Keys defined in the group's .env (plain configuration, e.g. TAZAMA_VERSION)
 # are ignored. Source-only keys (no file references them; other keys are
 # derived from them and the audit checks those) are exempt from the "never
@@ -32,10 +32,11 @@ for group in core extensions biar; do
     dir="$repo_root/$group"
     echo "[$group]"
 
-    # Template keys with their tag: "KEY 1" (required) or "KEY 0" (optional)
+    # Template keys with their tag: "KEY 1" (required or generated - the
+    # launcher fills those in before compose runs) or "KEY 0" (optional)
     template=$(tr -d '\r' < "$dir/secrets.env.template" | awk -v req=1 '
         /^[[:space:]]*#.*\[optional\]/ { req = 0; next }
-        /^[[:space:]]*#.*\[required\]/ { req = 1; next }
+        /^[[:space:]]*#.*\[(required|generated)\]/ { req = 1; next }
         /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=/ { sub(/^[[:space:]]*/, ""); sub(/=.*/, ""); print $0, req }
     ')
     template_keys=$(printf '%s\n' "$template" | cut -d' ' -f1 | sort -u)

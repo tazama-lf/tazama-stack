@@ -389,7 +389,8 @@ function Set-BiarServiceEnvOverlay {
 #   - TAZAMA_ENRICHMENT_ENCRYPTION_KEY: exactly 32 bytes (AES-256 key).
 # TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED and TAZAMA_SFTP_PASSWORD_HASH are derived
 # locally from the SFTP password and the enrichment key (see
-# Get-TcsSftpCiphertext and Get-SftpPasswordHash).
+# Get-TcsSftpCiphertext and Get-SftpPasswordHash in
+# utils/sftp-derived-secrets.ps1, shared with the extensions launcher).
 # The content is piped over ssh stdin (no secret on any command line) and
 # written with mode 600. No value is ever printed.
 $Script:SecretsSsmMap = [ordered]@{
@@ -440,53 +441,11 @@ $Script:SecretsUrlKeys = @(
     'TAZAMA_COUCHDB_PASSWORD'
 )
 
-# -- Get-TcsSftpCiphertext (internal) -----------------------------------------
-# connection-studio's encrypted SFTP password: AES-256-CBC, key = the UTF-8
-# bytes of the 32-character enrichment key, output = ivHex:cipherHex. The IV
-# is deterministic (first 16 bytes of SHA-256 over key + password), so the
-# value only changes when an input changes and connection-studio is not
-# recreated on every deploy.
-function Get-TcsSftpCiphertext {
-    param([string]$Password, [string]$Key)
-
-    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($Key)
-    $plain    = [System.Text.Encoding]::UTF8.GetBytes($Password)
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $iv = [byte[]]($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Key + $Password))[0..15])
-    } finally { $sha.Dispose() }
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    try {
-        $aes.Mode    = [System.Security.Cryptography.CipherMode]::CBC
-        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-        $aes.Key     = $keyBytes
-        $aes.IV      = $iv
-        $enc = $aes.CreateEncryptor()
-        try { $cipher = $enc.TransformFinalBlock($plain, 0, $plain.Length) } finally { $enc.Dispose() }
-    } finally { $aes.Dispose() }
-    $toHex = { param($b) -join ($b | ForEach-Object { $_.ToString('x2') }) }
-    return "$(& $toHex $iv):$(& $toHex $cipher)"
-}
-
-# -- Get-SftpPasswordHash (internal) ------------------------------------------
-# SHA-512 crypt hash of the SFTP password for the atmoz/sftp user definition
-# (user:<hash>:e:uid), so the container log shows no plain password (#301).
-# The 16-character salt is deterministic (SHA-256 over a fixed prefix, the
-# enrichment key and the password), so the value only changes when an input
-# changes and the sftp container is not recreated on every deploy. The key in
-# the salt input keeps the salt from being a public function of the password.
-. (Join-Path $PSScriptRoot '..\..\..\utils\sha512-crypt.ps1')
-function Get-SftpPasswordHash {
-    param([string]$Password, [string]$Key)
-
-    $itoa = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("sftp-hash-salt:$Key$Password"))
-    } finally { $sha.Dispose() }
-    $salt = -join (0..15 | ForEach-Object { $itoa[$digest[$_] -band 63] })
-    return Get-Sha512Crypt -Password $Password -Salt $salt
-}
+# Get-TcsSftpCiphertext and Get-SftpPasswordHash: deterministic derivations of
+# the two SFTP values, shared with the extensions launcher (#302), so a value
+# only changes when an input changes and no container is recreated on every
+# deploy.
+. (Join-Path $PSScriptRoot '..\..\..\utils\sftp-derived-secrets.ps1')
 
 function Set-ServerSecretsEnv {
     param(
@@ -495,17 +454,18 @@ function Set-ServerSecretsEnv {
         [string]$ServerLabel = 'server'
     )
 
-    # Template keys and their [required]/[optional] tag: the last tag in a
-    # comment applies to the KEY= lines that follow.
+    # Template keys and their [required]/[optional]/[generated] tag: the last
+    # tag in a comment applies to the KEY= lines that follow. [generated] keys
+    # are derived below.
     $templatePath = Join-Path $PSScriptRoot "..\..\..\$Group\secrets.env.template"
     $keys = [ordered]@{}
     $tag = 'required'
     foreach ($line in Get-Content $templatePath) {
         if ($line -match '^\s*#') {
-            $tags = [regex]::Matches($line, '\[(required|optional)\]')
+            $tags = [regex]::Matches($line, '\[(required|optional|generated)\]')
             if ($tags.Count) { $tag = $tags[$tags.Count - 1].Groups[1].Value }
         } elseif ($line -match '^\s*(TAZAMA_\w+)=') {
-            $keys[$Matches[1]] = ($tag -eq 'required') -or ($Script:SecretsAwsRequired -contains $Matches[1])
+            $keys[$Matches[1]] = ($tag -ne 'optional') -or ($Script:SecretsAwsRequired -contains $Matches[1])
         }
     }
     $unmapped = @($keys.Keys | Where-Object { -not $Script:SecretsSsmMap.Contains($_) })

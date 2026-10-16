@@ -206,7 +206,7 @@ One exception: the Keycloak test realm that the core stack imports defines its u
 | `extensions/` | `extensions/secrets.env.template` | `extensions/secrets.env` | DEMS/DEAPI and the extensions stack |
 | `biar/` | `biar/secrets.env.template` | `biar/secrets.env` | the BIAR stack |
 
-Copy the template to `secrets.env` in the same folder and fill in every `[required]` key. `[optional]` keys may stay empty. Each key in the template has a comment that says which services use it and any rule its value must follow.
+Copy the template to `secrets.env` in the same folder and fill in every `[required]` key. `[optional]` keys may stay empty. `[generated]` keys (two SFTP values in `extensions/`) are derived from other keys by the launcher; leave them empty. Each key in the template has a comment that says which services use it and any rule its value must follow.
 
 For a local development machine, each stack README has a section **Original default values** with the public test values the stack used before #298. They are published and therefore not secret: use them on your own machine only, never on a shared or internet-facing server.
 
@@ -230,7 +230,7 @@ Some credentials are used by more than one stack. The key has the same name in e
 
 ## 6.3. Value rules
 
-- No spaces, quotes or `$` in any value. Docker Compose reads `secrets.env` as a dotenv file and would strip quotes or expand `$`. The one exception is `TAZAMA_SFTP_PASSWORD_HASH` (extensions): it contains `$` and must be written in single quotes, which Compose reads literally.
+- No spaces, quotes or `$` in any value. Docker Compose reads `secrets.env` as a dotenv file and would strip quotes or expand `$`. The one exception is `TAZAMA_SFTP_PASSWORD_HASH` (extensions): it contains `$` and must be written in single quotes, which Compose reads literally. The extensions launcher writes it that way.
 - The Postgres and CouchDB keys are placed inside connection URLs as they are. Use only letters, digits and `-` `_` `.` `~` for them.
 - Some keys have their own rules (length, allowed characters, derived values); see the comment above the key in the template.
 - To generate a random value: `openssl rand -hex 24` (bash) or `[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLower()` (PowerShell 7).
@@ -264,6 +264,15 @@ required variable TAZAMA_HASURA_ADMIN_SECRET is missing a value: set it in core/
 
 If `secrets.env` itself is missing, the launchers stop with a message that points to this section; Compose reports `couldn't find env file`.
 
+The extensions stack also needs `TAZAMA_SFTP_PASSWORD_HASH` and `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED`, which the launcher derives from `TAZAMA_SFTP_PASSWORD`. Before you run its compose files by hand, fill them in once from the repository root (and again after you change the SFTP password or the enrichment key):
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File utils/sftp-derived-secrets.ps1 -GroupDir extensions   # Windows
+bash utils/sftp-derived-secrets.sh extensions                                                           # Linux, macOS, Git Bash
+```
+
+To make the values by hand instead, see [extensions/README.md, section 8.4](extensions/README.md#84-generating-the-sftp-values-by-hand). If they are empty, Compose stops with the `required variable` error above.
+
 ## 6.5. Changing a secret after the first deployment
 
 Most services read their secret at every container start: change the value in `secrets.env` and redeploy the stack (or the services that use the key).
@@ -282,7 +291,7 @@ On a local machine you can instead remove the stack's volumes (`docker compose .
 
 ## 6.6. Checking your setup
 
-Each launcher has an **Audit secrets** option. It compares your `secrets.env` with the template without printing any value, and reports missing, empty or unknown keys. For the extensions stack it also checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). The scripts can also be run directly from the repository root: `powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core` or `bash utils/audit-secrets.sh core`.
+Each launcher has an **Audit secrets** option. It compares your `secrets.env` with the template without printing any value, and reports missing, empty or unknown keys (empty `[generated]` keys are fine: the launcher fills them in). For the extensions stack it also checks that `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` decrypts to `TAZAMA_SFTP_PASSWORD`, that `TAZAMA_SFTP_PASSWORD_HASH` matches it and is single-quoted, and that `TAZAMA_SFTP_PASSWORD` is at most 15 bytes (connection-studio currently decrypts longer values incorrectly). The scripts can also be run directly from the repository root: `powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core` or `bash utils/audit-secrets.sh core`.
 
 ## 6.7. AWS deployment
 
@@ -331,7 +340,7 @@ See each stack's README for detailed configuration options, service port listing
 When you add, rename or remove a credential in a compose file or env file:
 
 1. Reference it as `${TAZAMA_<NAME>:?set it in <stack>/secrets.env}` (required) or `${TAZAMA_<NAME>?set it in <stack>/secrets.env}` (optional; may be empty). Never give it a default value.
-2. Add the key to `<stack>/secrets.env.template` with a `[required]` or `[optional]` tag, the services that use it, its value rules, and `MUST MATCH` if another stack uses the same value.
+2. Add the key to `<stack>/secrets.env.template` with a `[required]` or `[optional]` tag (or `[generated]` for a value a launcher derives from other keys; compose references it like a required key), the services that use it, its value rules, and `MUST MATCH` if another stack uses the same value.
 3. Add a row to the **Original default values** table in the stack README.
 4. For AWS, add the SSM mapping to `$Script:SecretsSsmMap` in `infra/aws/scripts/helpers.ps1` and the parameter to section A.7 of the AWS guide. The deploy scripts stop on a template key without a mapping.
 5. Run the consistency check and fix every finding:

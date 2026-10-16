@@ -5,7 +5,7 @@
 # the keys in secrets.env.template and with the "Original default values"
 # table in the group README, in both directions. Also checks that each
 # reference uses the fail-fast form matching the template tag:
-# [required] -> ${KEY:?...}, [optional] -> ${KEY?...}.
+# [required] or [generated] -> ${KEY:?...}, [optional] -> ${KEY?...}.
 # Keys defined in the group's .env (plain configuration, e.g. TAZAMA_VERSION)
 # are ignored. Source-only keys (no file references them; other keys are
 # derived from them and the audit checks those) are exempt from the "never
@@ -28,12 +28,13 @@ foreach ($group in 'core', 'extensions', 'biar') {
     $groupDir = Join-Path $repoRoot $group
     Write-Host "[$group]"
 
-    # Template keys and their [required]/[optional] tag
+    # Template keys; $true for [required] and [generated] (the launcher fills
+    # those in before compose runs), $false for [optional]
     $template = @{}
     $required = $true
     foreach ($line in Get-Content (Join-Path $groupDir 'secrets.env.template')) {
         if ($line -match '^\s*#.*\[optional\]') { $required = $false; continue }
-        if ($line -match '^\s*#.*\[required\]') { $required = $true; continue }
+        if ($line -match '^\s*#.*\[(required|generated)\]') { $required = $true; continue }
         if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=') { $template[$Matches[1]] = $required }
     }
 
