@@ -59,6 +59,7 @@ USER_TEMPLATES = [
         "Tazama",
         "API Client",
         [
+            "/tazama-batch/{gd}",
             "/tazama-conditions/{gd}",
             "/tazama-config/{gd}",
             "/tazama-reports/{gd}",
@@ -67,6 +68,10 @@ USER_TEMPLATES = [
     ),
     ("jupyter-user", "Jupyter", "User", ["/tazama-jupyter/JUPYTER_USER/{gd}"]),
 ]
+
+# Service groups that not every realm has. Their paths are skipped (with a
+# notice) instead of stopping the script when the service group is missing.
+OPTIONAL_SERVICE_GROUPS = {"/tazama-batch"}
 
 # --------------------------------------------------------------------------- #
 # CMS reference_ids seed (tazama_cms database, extensions deployment)
@@ -79,6 +84,9 @@ CMS_REFERENCE_IDS = [
 
 # Tenant IDs are interpolated into SQL; restrict to a safe character set
 TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+# Plain http is allowed only for these Keycloak hosts
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 # --------------------------------------------------------------------------- #
 # HTTP helpers (stdlib only - no requests dependency)
@@ -314,9 +322,10 @@ def create_user(
     first_name,
     last_name,
     password,
-    tenant_id,
     dry_run=False,
 ):
+    """Create the user without a TENANT_ID attribute: the tenant comes from the
+    tenant groups the user is assigned to."""
     email = username  # username is email format
     print(f"  {'[DRY-RUN] ' if dry_run else ''}Create user {username}")
     if dry_run:
@@ -330,7 +339,6 @@ def create_user(
         "enabled": True,
         "emailVerified": True,
         "credentials": [{"type": "password", "value": password, "temporary": False}],
-        "attributes": {"TENANT_ID": [tenant_id]},
     }
     url = f"{base_url}/admin/realms/{realm}/users"
     status, body = http("POST", url, token=token, data=payload)
@@ -341,21 +349,11 @@ def create_user(
         if users:
             return users[0]["id"]
     elif status == 409:
-        print(f"    (user '{username}' already exists - updating password + TENANT_ID)")
+        print(f"    (user '{username}' already exists - updating password)")
         search_url = f"{base_url}/admin/realms/{realm}/users?username={urllib.parse.quote(username)}&exact=true"
         _, users = http("GET", search_url, token=token)
         if users:
             uid = users[0]["id"]
-            # Heal TENANT_ID attribute (older runs derived it from the domain)
-            attrs = users[0].get("attributes") or {}
-            if attrs.get("TENANT_ID") != [tenant_id]:
-                attrs["TENANT_ID"] = [tenant_id]
-                http(
-                    "PUT",
-                    f"{base_url}/admin/realms/{realm}/users/{uid}",
-                    token=token,
-                    data={"attributes": attrs},
-                )
             # Reset password
             pw_url = f"{base_url}/admin/realms/{realm}/users/{uid}/reset-password"
             http(
@@ -364,10 +362,29 @@ def create_user(
                 token=token,
                 data={"type": "password", "value": password, "temporary": False},
             )
+            clear_user_tenant_id(base_url, realm, token, users[0])
             return uid
     else:
         print(f"  ERROR creating user '{username}': HTTP {status} - {body}")
         return None
+
+
+def clear_user_tenant_id(base_url, realm, token, user):
+    """Remove a TENANT_ID user attribute left by earlier versions of this script.
+    It would take precedence over the tenant group's value. Other attributes are kept."""
+    attributes = dict(user.get("attributes") or {})
+    if "TENANT_ID" not in attributes:
+        return
+    old = attributes.pop("TENANT_ID")
+    print(f"    (removing legacy TENANT_ID user attribute {old})")
+    status, body = http(
+        "PUT",
+        f"{base_url}/admin/realms/{realm}/users/{user['id']}",
+        token=token,
+        data={**user, "attributes": attributes},
+    )
+    if status not in (200, 204):
+        print(f"    WARNING: could not remove TENANT_ID (HTTP {status}) - {body}")
 
 
 def seed_cms_reference_ids(psql_command, tenant_id, dry_run=False):
@@ -492,6 +509,16 @@ def main():
     base_url = args.keycloak_url.rstrip("/")
     dry_run = args.dry_run
 
+    # Never send the admin password or tokens unencrypted to a remote host.
+    parsed_url = urllib.parse.urlparse(base_url)
+    if not (
+        parsed_url.scheme == "https"
+        or (parsed_url.scheme == "http" and parsed_url.hostname in LOOPBACK_HOSTS)
+    ):
+        parser.error(
+            f"--keycloak-url must use https (http is allowed only for localhost): {base_url}"
+        )
+
     print(f"\n=== Add tenant: {args.tenant_id} | domain: {domain} | realm: {realm} ===")
     if dry_run:
         print("*** DRY-RUN MODE - no changes will be made ***\n")
@@ -544,6 +571,11 @@ def main():
                     else f"dry-svc-{part}"
                 )
                 if not gid:
+                    if current_path in OPTIONAL_SERVICE_GROUPS:
+                        print(
+                            f"  Service group '{current_path}' not in realm - skipping '{path}'"
+                        )
+                        break
                     print(
                         f"  ERROR: Service group '{current_path}' not found in realm. Cannot proceed."
                     )
@@ -552,7 +584,8 @@ def main():
                 parent_id = gid
             else:
                 # Create if not exists; the tenant leaf group carries the
-                # TENANT_ID attribute (read by auth-service group resolution)
+                # TENANT_ID attribute. It is the only source of the token's
+                # tenant_id claim and of auth-service group resolution.
                 is_leaf = i == len(parts) - 1
                 gid = ensure_subgroup(
                     base_url,
@@ -583,7 +616,6 @@ def main():
             first,
             last,
             args.password,
-            args.tenant_id,
             dry_run=dry_run,
         )
 

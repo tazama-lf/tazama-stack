@@ -747,10 +747,19 @@
     "id" : "71f0931a-bc7e-4569-a9b3-143c4b6d21f8",
     "name" : "tazama-batch",
     "path" : "/tazama-batch",
-    "subGroups" : [ ],
-    "attributes" : {
-      "TENANT_ID" : [ "DEFAULT" ]
-    },
+    "subGroups" : [ {
+      "id" : "166a5f6d-4ea9-4e33-a4a0-ba5e823b1c85",
+      "name" : "TAZAMA.ORG",
+      "path" : "/tazama-batch/TAZAMA.ORG",
+      "parentId" : "71f0931a-bc7e-4569-a9b3-143c4b6d21f8",
+      "subGroups" : [ ],
+      "attributes" : {
+        "TENANT_ID" : [ "DEFAULT" ]
+      },
+      "realmRoles" : [ ],
+      "clientRoles" : { }
+    } ],
+    "attributes" : { },
     "realmRoles" : [ "POST_V1_UPLOADFILE", "POST_V1_EXECUTEBATCH" ],
     "clientRoles" : { }
   }, {
@@ -762,10 +771,19 @@
       "name" : "CMS_ADMIN",
       "path" : "/tazama-cms/CMS_ADMIN",
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
-      "subGroups" : [ ],
-      "attributes" : {
-        "TENANT_ID" : [ "TAZAMA" ]
-      },
+      "subGroups" : [ {
+        "id" : "684dee96-8e4e-4216-a29f-aba8ca6c617a",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-cms/CMS_ADMIN/TAZAMA.ORG",
+        "parentId" : "1a86bf2c-a325-473c-b546-891cdfff2d8d",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
+      "attributes" : { },
       "realmRoles" : [ "CMS_ADMIN", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
     }, {
@@ -773,7 +791,18 @@
       "name" : "CMS_COMPLIANCE_OFFICER",
       "path" : "/tazama-cms/CMS_COMPLIANCE_OFFICER",
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "db29f18a-4640-421e-a167-b425e2b7309f",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-cms/CMS_COMPLIANCE_OFFICER/TAZAMA.ORG",
+        "parentId" : "0d8d6350-d6a2-4141-8b19-8e4609381d69",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "CMS_COMPLIANCE_OFFICER", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
@@ -782,7 +811,18 @@
       "name" : "CMS_INVESTIGATOR",
       "path" : "/tazama-cms/CMS_INVESTIGATOR",
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "193fbb27-64a8-42d9-a241-7c9d7bdb775f",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-cms/CMS_INVESTIGATOR/TAZAMA.ORG",
+        "parentId" : "e1e137c0-8200-4109-b741-54f5956eff43",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "CMS_INVESTIGATOR", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
@@ -791,14 +831,23 @@
       "name" : "CMS_SUPERVISOR",
       "path" : "/tazama-cms/CMS_SUPERVISOR",
       "parentId" : "d8dabf95-de1d-4c73-be0d-8bfab08651eb",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "f351e4af-0d2b-4888-a04a-a0ff871094dd",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-cms/CMS_SUPERVISOR/TAZAMA.ORG",
+        "parentId" : "e8a4f193-843f-45fc-aa3e-796b50fbf392",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "CMS_SUPERVISOR", "QUERY_LAKEHOUSE" ],
       "clientRoles" : { }
     } ],
-    "attributes" : {
-      "TENANT_ID" : [ "DEFAULT" ]
-    },
+    "attributes" : { },
     "realmRoles" : [ ],
     "clientRoles" : {
       "realm-management" : [ "view-users" ]
@@ -808,6 +857,17 @@
     "name" : "tazama-conditions",
     "path" : "/tazama-conditions",
     "subGroups" : [ {
+      "id" : "5c5709a7-5319-4cbb-9136-9ca02ca0c716",
+      "name" : "TAZAMA.ORG",
+      "path" : "/tazama-conditions/TAZAMA.ORG",
+      "parentId" : "a1791a1f-b3ab-4dbd-9bdf-e93aef631bd7",
+      "subGroups" : [ ],
+      "attributes" : {
+        "TENANT_ID" : [ "DEFAULT" ]
+      },
+      "realmRoles" : [ ],
+      "clientRoles" : { }
+    }, {
       "id" : "3fb9faca-24aa-4637-bc4c-886b8b0736d0",
       "name" : "tenant-001",
       "path" : "/tazama-conditions/tenant-001",
@@ -838,6 +898,17 @@
     "name" : "tazama-config",
     "path" : "/tazama-config",
     "subGroups" : [ {
+      "id" : "81e3668b-bd37-410d-bd25-c7bfaa81cfde",
+      "name" : "TAZAMA.ORG",
+      "path" : "/tazama-config/TAZAMA.ORG",
+      "parentId" : "6005988b-4049-4f80-9f7f-886bf0f58f35",
+      "subGroups" : [ ],
+      "attributes" : {
+        "TENANT_ID" : [ "DEFAULT" ]
+      },
+      "realmRoles" : [ ],
+      "clientRoles" : { }
+    }, {
       "id" : "4e67738a-55ca-4e78-8fe8-e2ada64f31dc",
       "name" : "tenant-001",
       "path" : "/tazama-config/tenant-001",
@@ -879,7 +950,7 @@
         "parentId" : "fabe813e-0127-4e02-88e3-97d5cfe76231",
         "subGroups" : [ ],
         "attributes" : {
-          "TENANT_ID" : [ "TAZAMA" ]
+          "TENANT_ID" : [ "DEFAULT" ]
         },
         "realmRoles" : [ ],
         "clientRoles" : { }
@@ -899,7 +970,7 @@
         "parentId" : "4991a900-05dd-4320-b2a5-5286a10787a8",
         "subGroups" : [ ],
         "attributes" : {
-          "TENANT_ID" : [ "TAZAMA" ]
+          "TENANT_ID" : [ "DEFAULT" ]
         },
         "realmRoles" : [ ],
         "clientRoles" : { }
@@ -927,7 +998,7 @@
         "parentId" : "ba3d428a-d4ff-40b2-8c4d-0d04c0c8d8a5",
         "subGroups" : [ ],
         "attributes" : {
-          "TENANT_ID" : [ "TAZAMA" ]
+          "TENANT_ID" : [ "DEFAULT" ]
         },
         "realmRoles" : [ ],
         "clientRoles" : { }
@@ -944,6 +1015,17 @@
     "name" : "tazama-reports",
     "path" : "/tazama-reports",
     "subGroups" : [ {
+      "id" : "be9f4d5a-3589-451d-89ea-9cb586231683",
+      "name" : "TAZAMA.ORG",
+      "path" : "/tazama-reports/TAZAMA.ORG",
+      "parentId" : "70d906a9-8f04-4cfb-9e4f-1235e4fa9131",
+      "subGroups" : [ ],
+      "attributes" : {
+        "TENANT_ID" : [ "DEFAULT" ]
+      },
+      "realmRoles" : [ ],
+      "clientRoles" : { }
+    }, {
       "id" : "514eb71a-df2f-4c85-8c1a-f58e3bd4c5f6",
       "name" : "tenant-001",
       "path" : "/tazama-reports/tenant-001",
@@ -978,7 +1060,18 @@
       "name" : "approver",
       "path" : "/tazama-tcs/approver",
       "parentId" : "4efc684c-cd50-4d4b-89f3-31f2204e6c8c",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "c0cc849c-0ece-4dea-835d-6a0fc49f3eaf",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-tcs/approver/TAZAMA.ORG",
+        "parentId" : "6a046288-87b0-427b-901b-428b8cac58a2",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "approver" ],
       "clientRoles" : { }
@@ -987,7 +1080,18 @@
       "name" : "editor",
       "path" : "/tazama-tcs/editor",
       "parentId" : "4efc684c-cd50-4d4b-89f3-31f2204e6c8c",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "05654f6f-5564-4a32-950a-6cad08dba9bf",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-tcs/editor/TAZAMA.ORG",
+        "parentId" : "f44c2f59-2e72-42ed-a85a-f513d7eba55f",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "editor" ],
       "clientRoles" : { }
@@ -996,7 +1100,18 @@
       "name" : "exporter",
       "path" : "/tazama-tcs/exporter",
       "parentId" : "4efc684c-cd50-4d4b-89f3-31f2204e6c8c",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "82b1cbc9-424e-45ad-a8cf-f94db79511d6",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-tcs/exporter/TAZAMA.ORG",
+        "parentId" : "050f71e1-b3e1-4ca5-a8d7-9b18c8427d5f",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "exporter" ],
       "clientRoles" : { }
@@ -1005,14 +1120,23 @@
       "name" : "publisher",
       "path" : "/tazama-tcs/publisher",
       "parentId" : "4efc684c-cd50-4d4b-89f3-31f2204e6c8c",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "f1f4f1a4-a30e-4546-854e-3c4c994c7576",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-tcs/publisher/TAZAMA.ORG",
+        "parentId" : "cf803369-2677-4391-91bf-b0bc611b337d",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "publisher" ],
       "clientRoles" : { }
     } ],
-    "attributes" : {
-      "TENANT_ID" : [ "DEFAULT" ]
-    },
+    "attributes" : { },
     "realmRoles" : [ ],
     "clientRoles" : { }
   }, {
@@ -1020,6 +1144,17 @@
     "name" : "tazama-tms",
     "path" : "/tazama-tms",
     "subGroups" : [ {
+      "id" : "df241e64-78bd-4936-b4c2-1e19b2da99da",
+      "name" : "TAZAMA.ORG",
+      "path" : "/tazama-tms/TAZAMA.ORG",
+      "parentId" : "8922d510-3e54-45eb-9001-d06241754dab",
+      "subGroups" : [ ],
+      "attributes" : {
+        "TENANT_ID" : [ "DEFAULT" ]
+      },
+      "realmRoles" : [ ],
+      "clientRoles" : { }
+    }, {
       "id" : "036bbf14-ba18-472b-95a1-3aa99a5d075f",
       "name" : "tenant-001",
       "path" : "/tazama-tms/tenant-001",
@@ -1054,7 +1189,18 @@
       "name" : "approver",
       "path" : "/tazama-trs/approver",
       "parentId" : "b4a37d11-2d79-42c2-bbbe-1952345aa202",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "dab50c7b-84e0-41ac-a574-dcf82440e55e",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-trs/approver/TAZAMA.ORG",
+        "parentId" : "4c5cc7ff-c485-4603-8719-282e30de6156",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "approver", "trs_approver" ],
       "clientRoles" : { }
@@ -1063,7 +1209,18 @@
       "name" : "data-engineer-approver",
       "path" : "/tazama-trs/data-engineer-approver",
       "parentId" : "b4a37d11-2d79-42c2-bbbe-1952345aa202",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "d921c785-fcf9-4d7b-9abb-3de09032279e",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-trs/data-engineer-approver/TAZAMA.ORG",
+        "parentId" : "a6f5ddbe-e5ab-48c4-928d-31f97536147c",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ ],
       "clientRoles" : { }
@@ -1072,7 +1229,18 @@
       "name" : "data-engineer-editor",
       "path" : "/tazama-trs/data-engineer-editor",
       "parentId" : "b4a37d11-2d79-42c2-bbbe-1952345aa202",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "afbeeb04-404d-492d-83a1-85465f49214e",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-trs/data-engineer-editor/TAZAMA.ORG",
+        "parentId" : "55bcf246-4419-4fc4-8c67-003c2d7a2900",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ ],
       "clientRoles" : { }
@@ -1081,7 +1249,18 @@
       "name" : "editor",
       "path" : "/tazama-trs/editor",
       "parentId" : "b4a37d11-2d79-42c2-bbbe-1952345aa202",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "9e1f8785-df6e-4fbc-a598-eb938f1e09ad",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-trs/editor/TAZAMA.ORG",
+        "parentId" : "6ee61261-ed44-4227-9054-3442532350b8",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "editor", "trs_editor" ],
       "clientRoles" : { }
@@ -1090,14 +1269,23 @@
       "name" : "publisher",
       "path" : "/tazama-trs/publisher",
       "parentId" : "b4a37d11-2d79-42c2-bbbe-1952345aa202",
-      "subGroups" : [ ],
+      "subGroups" : [ {
+        "id" : "e7d2bb14-7ba0-4a19-95f8-2324716ff4e6",
+        "name" : "TAZAMA.ORG",
+        "path" : "/tazama-trs/publisher/TAZAMA.ORG",
+        "parentId" : "88e4753a-f60e-4a29-a432-db28f278a522",
+        "subGroups" : [ ],
+        "attributes" : {
+          "TENANT_ID" : [ "DEFAULT" ]
+        },
+        "realmRoles" : [ ],
+        "clientRoles" : { }
+      } ],
       "attributes" : { },
       "realmRoles" : [ "trs_publisher", "publisher" ],
       "clientRoles" : { }
     } ],
-    "attributes" : {
-      "TENANT_ID" : [ "DEFAULT" ]
-    },
+    "attributes" : { },
     "realmRoles" : [ ],
     "clientRoles" : { }
   } ],
@@ -1160,7 +1348,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-cms/CMS_ADMIN" ]
+    "groups" : [ "/tazama-cms/CMS_ADMIN/TAZAMA.ORG" ]
   }, {
     "id" : "8958bbd1-655f-4129-9293-87f85c74c273",
     "createdTimestamp" : 1776329325836,
@@ -1180,7 +1368,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-cms/CMS_COMPLIANCE_OFFICER" ]
+    "groups" : [ "/tazama-cms/CMS_COMPLIANCE_OFFICER/TAZAMA.ORG" ]
   }, {
     "id" : "5fb927ab-d31b-46f7-87c9-0a069b8df9ee",
     "createdTimestamp" : 1776329223395,
@@ -1200,7 +1388,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-cms/CMS_INVESTIGATOR" ]
+    "groups" : [ "/tazama-cms/CMS_INVESTIGATOR/TAZAMA.ORG" ]
   }, {
     "id" : "0a6ffb8a-18fd-485f-a6b3-928510c3afbf",
     "createdTimestamp" : 1776329298934,
@@ -1220,7 +1408,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-cms/CMS_SUPERVISOR" ]
+    "groups" : [ "/tazama-cms/CMS_SUPERVISOR/TAZAMA.ORG" ]
   }, {
     "id" : "bc984bd8-340e-40ef-8b51-ccc0f4e17dc1",
     "username" : "jupyter-user@tazama.org",
@@ -1284,9 +1472,6 @@
     "totp" : false,
     "emailVerified" : true,
     "email" : "tazama-user@tazama.org",
-    "attributes" : {
-      "TENANT_ID" : [ "DEFAULT" ]
-    },
     "credentials" : [ {
       "type" : "password",
       "value" : "password",
@@ -1296,7 +1481,26 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-batch", "/tazama-conditions", "/tazama-config", "/tazama-reports", "/tazama-tms" ]
+    "groups" : [ "/tazama-batch/TAZAMA.ORG", "/tazama-conditions/TAZAMA.ORG", "/tazama-config/TAZAMA.ORG", "/tazama-reports/TAZAMA.ORG", "/tazama-tms/TAZAMA.ORG" ]
+  }, {
+    "id" : "d1424750-4e8e-4790-894a-54ec3adb7205",
+    "username" : "tazama-api-client@tazama.org",
+    "enabled" : true,
+    "totp" : false,
+    "emailVerified" : true,
+    "firstName" : "Tazama",
+    "lastName" : "API Client",
+    "email" : "tazama-api-client@tazama.org",
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "password",
+      "temporary" : false
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-tazama" ],
+    "notBefore" : 0,
+    "groups" : [ "/tazama-batch/TAZAMA.ORG", "/tazama-conditions/TAZAMA.ORG", "/tazama-config/TAZAMA.ORG", "/tazama-reports/TAZAMA.ORG", "/tazama-tms/TAZAMA.ORG" ]
   }, {
     "id" : "02643269-6ade-45d8-af20-c4a5d5d8e552",
     "createdTimestamp" : 1776319928982,
@@ -1316,7 +1520,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-tcs/approver" ]
+    "groups" : [ "/tazama-tcs/approver/TAZAMA.ORG" ]
   }, {
     "id" : "1b2392fa-01a1-4e85-bfc9-17fbc3da16a5",
     "createdTimestamp" : 1776319863775,
@@ -1336,7 +1540,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-tcs/editor" ]
+    "groups" : [ "/tazama-tcs/editor/TAZAMA.ORG" ]
   }, {
     "id" : "ee60f68f-d3bb-4baa-9b6e-65c34d637368",
     "createdTimestamp" : 1776320058302,
@@ -1356,7 +1560,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-tcs/exporter" ]
+    "groups" : [ "/tazama-tcs/exporter/TAZAMA.ORG" ]
   }, {
     "id" : "3e1e219c-a985-43a9-a51f-1596599a6215",
     "createdTimestamp" : 1776319998589,
@@ -1376,7 +1580,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-tcs/publisher" ]
+    "groups" : [ "/tazama-tcs/publisher/TAZAMA.ORG" ]
   }, {
     "id" : "41959836-1c5a-4c4b-b76c-273aae29007c",
     "createdTimestamp" : 1758793456337,
@@ -1432,7 +1636,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-trs/approver" ]
+    "groups" : [ "/tazama-trs/approver/TAZAMA.ORG" ]
   }, {
     "id" : "b8229220-c1b1-4f88-b6a3-84b4f2dabf91",
     "createdTimestamp" : 1776315272615,
@@ -1452,7 +1656,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-trs/editor" ]
+    "groups" : [ "/tazama-trs/editor/TAZAMA.ORG" ]
   }, {
     "id" : "5b9950e7-ba97-45d1-b823-31ccbbc68c13",
     "createdTimestamp" : 1776319785373,
@@ -1472,7 +1676,7 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-tazama" ],
     "notBefore" : 0,
-    "groups" : [ "/tazama-trs/publisher" ]
+    "groups" : [ "/tazama-trs/publisher/TAZAMA.ORG" ]
   } ],
   "scopeMappings" : [ {
     "clientScope" : "offline_access",

@@ -10,6 +10,7 @@
 //
 // Admin password defaults to KC_ADMIN_PW env var.
 
+import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
 import { URLSearchParams } from 'node:url';
@@ -29,9 +30,13 @@ const USER_TEMPLATES = [
   { prefix: 'trs-approver',           first: 'TRS',    last: 'Approver',          groups: ['/tazama-trs/approver/{gd}'] },
   { prefix: 'trs-editor',             first: 'TRS',    last: 'Editor',            groups: ['/tazama-trs/editor/{gd}'] },
   { prefix: 'trs-publisher',          first: 'TRS',    last: 'Publisher',         groups: ['/tazama-trs/publisher/{gd}'] },
-  { prefix: 'tazama-api-client',      first: 'Tazama', last: 'API Client',        groups: ['/tazama-conditions/{gd}', '/tazama-config/{gd}', '/tazama-reports/{gd}', '/tazama-tms/{gd}'] },
+  { prefix: 'tazama-api-client',      first: 'Tazama', last: 'API Client',        groups: ['/tazama-batch/{gd}', '/tazama-conditions/{gd}', '/tazama-config/{gd}', '/tazama-reports/{gd}', '/tazama-tms/{gd}'] },
   { prefix: 'jupyter-user',           first: 'Jupyter', last: 'User',             groups: ['/tazama-jupyter/JUPYTER_USER/{gd}'] },
 ];
+
+// Service groups that not every realm has. Their paths are skipped (with a
+// notice) instead of stopping the script when the service group is missing.
+const OPTIONAL_SERVICE_GROUPS = new Set(['/tazama-batch']);
 
 // ---------------------------------------------------------------------------
 // CMS reference_ids seed (tazama_cms database, extensions deployment)
@@ -43,6 +48,9 @@ const CMS_REFERENCE_IDS = [
 
 // Tenant IDs are interpolated into SQL; restrict to a safe character set
 const TENANT_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
+// Plain http is allowed only for these Keycloak hosts
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 // ---------------------------------------------------------------------------
 // HTTP helper (stdlib only)
@@ -56,9 +64,10 @@ function request(method, url, { token, body, contentType = 'application/json' } 
       : undefined;
 
     const parsed = new URL(url);
+    const transport = parsed.protocol === 'http:' ? http : https;
     const options = {
       hostname: parsed.hostname,
-      port: parsed.port || 443,
+      port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
       path: parsed.pathname + parsed.search,
       method,
       headers: {
@@ -68,7 +77,7 @@ function request(method, url, { token, body, contentType = 'application/json' } 
       },
     };
 
-    const req = https.request(options, (res) => {
+    const req = transport.request(options, (res) => {
       let raw = '';
       res.on('data', (chunk) => (raw += chunk));
       res.on('end', () => {
@@ -166,7 +175,9 @@ async function findUser(baseUrl, realm, token, username) {
   return Array.isArray(data) && data.length ? data[0] : null;
 }
 
-async function createUser(baseUrl, realm, token, username, firstName, lastName, password, tenantId, dryRun) {
+// The user gets no TENANT_ID attribute: the tenant comes from the tenant groups
+// the user is assigned to.
+async function createUser(baseUrl, realm, token, username, firstName, lastName, password, dryRun) {
   console.log(`  ${dryRun ? '[DRY-RUN] ' : ''}Create user ${username}`);
   if (dryRun) return `dry-run-user-${username}`;
 
@@ -176,33 +187,40 @@ async function createUser(baseUrl, realm, token, username, firstName, lastName, 
       username, email: username, firstName, lastName,
       enabled: true, emailVerified: true,
       credentials: [{ type: 'password', value: password, temporary: false }],
-      attributes: { TENANT_ID: [tenantId] },
     },
   });
 
   if (status === 201) {
     return (await findUser(baseUrl, realm, token, username))?.id ?? null;
   } else if (status === 409) {
-    console.log(`    (user '${username}' already exists - updating password + TENANT_ID)`);
+    console.log(`    (user '${username}' already exists - updating password)`);
     const user = await findUser(baseUrl, realm, token, username);
     if (user) {
-      // Heal TENANT_ID attribute (older runs derived it from the domain)
-      const attrs = user.attributes ?? {};
-      if (JSON.stringify(attrs.TENANT_ID) !== JSON.stringify([tenantId])) {
-        attrs.TENANT_ID = [tenantId];
-        await request('PUT', `${baseUrl}/admin/realms/${realm}/users/${user.id}`, {
-          token, body: { attributes: attrs },
-        });
-      }
       await request('PUT', `${baseUrl}/admin/realms/${realm}/users/${user.id}/reset-password`, {
         token, body: { type: 'password', value: password, temporary: false },
       });
+      await clearUserTenantId(baseUrl, realm, token, user);
       return user.id;
     }
   } else {
     console.error(`  ERROR creating user '${username}': HTTP ${status}`, data);
   }
   return null;
+}
+
+// Remove a TENANT_ID user attribute left by earlier versions of this script.
+// It would take precedence over the tenant group's value. Other attributes are kept.
+async function clearUserTenantId(baseUrl, realm, token, user) {
+  const attributes = { ...(user.attributes ?? {}) };
+  if (!('TENANT_ID' in attributes)) return;
+  console.log(`    (removing legacy TENANT_ID user attribute ${JSON.stringify(attributes.TENANT_ID)})`);
+  delete attributes.TENANT_ID;
+  const { status, data } = await request('PUT', `${baseUrl}/admin/realms/${realm}/users/${user.id}`, {
+    token, body: { ...user, attributes },
+  });
+  if (![200, 204].includes(status)) {
+    console.warn(`    WARNING: could not remove TENANT_ID (HTTP ${status})`, data);
+  }
 }
 
 async function assignUserToGroup(baseUrl, realm, token, userId, groupId, dryRun) {
@@ -361,6 +379,14 @@ async function main() {
   const groupDomain = domain.toUpperCase();
   const { realm, keycloakUrl: baseUrl, dryRun } = opts;
 
+  // Never send the admin password or tokens unencrypted to a remote host.
+  const parsedUrl = new URL(baseUrl);
+  if (!(parsedUrl.protocol === 'https:' ||
+        (parsedUrl.protocol === 'http:' && LOOPBACK_HOSTS.has(parsedUrl.hostname)))) {
+    console.error(`ERROR: --keycloak-url must use https (http is allowed only for localhost): ${baseUrl}`);
+    process.exit(1);
+  }
+
   console.log(`\n=== Add tenant: ${opts.tenantId} | domain: ${domain} | realm: ${realm} ===`);
   if (dryRun) console.log('*** DRY-RUN MODE - no changes will be made ***');
 
@@ -385,12 +411,16 @@ async function main() {
       if (groupIdCache[currentPath]) { parentId = groupIdCache[currentPath]; continue; }
       if (i === 0) {
         const gid = dryRun ? `dry-svc-${parts[i]}` : await findServiceGroup(baseUrl, realm, token, currentPath);
+        if (!gid && OPTIONAL_SERVICE_GROUPS.has(currentPath)) {
+          console.log(`  Service group '${currentPath}' not in realm - skipping '${path}'`);
+          break;
+        }
         if (!gid) { console.error(`  ERROR: Service group '${currentPath}' not found.`); process.exit(1); }
         groupIdCache[currentPath] = gid;
         parentId = gid;
       } else {
-        // The tenant leaf group carries the TENANT_ID attribute
-        // (read by auth-service group resolution)
+        // The tenant leaf group carries the TENANT_ID attribute. It is the only
+        // source of the token's tenant_id claim and of auth-service group resolution.
         const attrs = i === parts.length - 1 ? { TENANT_ID: [opts.tenantId] } : null;
         const gid = await ensureSubgroup(baseUrl, realm, token, parentId, parts[i], attrs, dryRun);
         groupIdCache[currentPath] = gid;
@@ -405,7 +435,7 @@ async function main() {
   for (const { prefix, first, last, groups } of USER_TEMPLATES) {
     if (!dryRun) token = await getToken(baseUrl, opts.adminUser, opts.adminPassword);
     const username = `${prefix}@${domain}`;
-    const userId = await createUser(baseUrl, realm, token, username, first, last, opts.password, opts.tenantId, dryRun);
+    const userId = await createUser(baseUrl, realm, token, username, first, last, opts.password, dryRun);
 
     for (const gp of groups) {
       const fullPath = gp.replace('{gd}', groupDomain);

@@ -675,197 +675,18 @@ View this file for additional detail about the various Docker Compose YAML files
 
 ## Adding tenants and users to Keycloak
 
-Two scripts are provided to add a new tenant and its default set of 12 users to a running Keycloak instance via the Admin REST API. No Keycloak restart or realm file edit is required.
+Use the `add-tenant` scripts in [`utils/`](../utils/README.md#add-tenantpy--add-tenantjs) to add a tenant and its standard users to a running Keycloak through the Admin REST API. No Keycloak restart or realm file edit is needed.
 
-The scripts are located in:
+The scripts follow the same group layout as the default realm (see [Default users](#default-users)): for a domain such as `acme.com`, they create an `ACME.COM` group with attribute `TENANT_ID=<tenant ID>` under each service role group and API group, and put the users in those groups. Users get no `TENANT_ID` attribute of their own.
 
-```
-core/auth/keycloak/add-tenant.py   (Python 3.8+, no third-party dependencies)
-core/auth/keycloak/add-tenant.js   (Node.js 18+,  no third-party dependencies)
-```
-
-Both scripts are functionally identical. Choose whichever runtime is more convenient.
-
-### What the scripts do
-
-For each new tenant, the scripts:
-
-1. Authenticate against the Keycloak Admin REST API using the `admin-cli` client.
-2. Ensure that the required tenant subgroup node (named after the tenant domain in upper-case, e.g. `NEWTENANT.COM`) exists under every service role group. Missing nodes are created automatically; existing ones are left untouched.
-3. Create 12 standard users with the tenant email domain, set their password, and assign the `TENANT_ID` user attribute:
-
-   | Username prefix | Service | Group path |
-   |---|---|---|
-   | `cms-administrator` | CMS | `/tazama-cms/CMS_ADMIN/<DOMAIN>` |
-   | `cms-compliance-officer` | CMS | `/tazama-cms/CMS_COMPLIANCE_OFFICER/<DOMAIN>` |
-   | `cms-investigator` | CMS | `/tazama-cms/CMS_INVESTIGATOR/<DOMAIN>` |
-   | `cms-supervisor` | CMS | `/tazama-cms/CMS_SUPERVISOR/<DOMAIN>` |
-   | `tcs-approver` | TCS | `/tazama-tcs/approver/<DOMAIN>` |
-   | `tcs-editor` | TCS | `/tazama-tcs/editor/<DOMAIN>` |
-   | `tcs-exporter` | TCS | `/tazama-tcs/exporter/<DOMAIN>` |
-   | `tcs-publisher` | TCS | `/tazama-tcs/publisher/<DOMAIN>` |
-   | `trs-approver` | TRS | `/tazama-trs/approver/<DOMAIN>` |
-   | `trs-editor` | TRS | `/tazama-trs/editor/<DOMAIN>` |
-   | `trs-publisher` | TRS | `/tazama-trs/publisher/<DOMAIN>` |
-   | `tazama-api-client` | API | `/tazama-conditions/<DOMAIN>`, `/tazama-config/<DOMAIN>`, `/tazama-reports/<DOMAIN>`, `/tazama-tms/<DOMAIN>` |
-
-4. Print a shareable tenant onboarding report and a Keycloak group assignment breakdown.
-
-If a user already exists, the script resets the password and re-assigns the group. Running the script a second time for the same tenant is therefore safe.
-
-### Prerequisites
-
-- Keycloak must be running and reachable (default: `https://keycloak.beta.tazama.org`).
-- **Python variant**: Python 3.8 or later. No `pip install` required - uses stdlib only (`urllib`, `argparse`, `json`).
-- **Node variant**: Node.js 18 or later. No `npm install` required - uses stdlib only (`node:https`, `node:url`). The script uses ES module syntax (`import`); run directly with `node add-tenant.js`.
-- The Keycloak admin password must be available. Set it as the `KC_ADMIN_PW` environment variable (recommended) or pass it with `--admin-password`.
-
-### Setting the admin password
-
-**Linux / macOS:**
-```bash
-export KC_ADMIN_PW="your-admin-password"
-```
-
-**Windows PowerShell:**
-```powershell
-$env:KC_ADMIN_PW = 'your-admin-password'
-```
-
-**Windows Command Prompt:**
-```cmd
-set KC_ADMIN_PW=your-admin-password
-```
-
-> [!NOTE]
-> Set the variable in the same shell session you will run the script from. The variable is not persisted across sessions unless you add it to your shell profile or system environment.
-
-### Usage
-
-**Python:**
-```bash
-python add-tenant.py --domain <domain> --tenant-id <TENANT_ID> --password <password>
-```
-
-**Node.js:**
-```bash
-node add-tenant.js --domain <domain> --tenant-id <TENANT_ID> --password <password>
-```
-
-### Arguments
-
-| Argument | Required | Default | Description |
-|---|---|---|---|
-| `--domain` | Yes | - | Tenant email domain, e.g. `newtenant.com` |
-| `--tenant-id` | Yes | - | Tenant identifier in upper-case, e.g. `NEWTENANT` |
-| `--password` | Yes | - | Password assigned to all 12 tenant users |
-| `--keycloak-url` | No | `https://keycloak.beta.tazama.org` | Keycloak base URL |
-| `--admin-user` | No | `admin` | Keycloak admin username |
-| `--admin-password` | No | `$KC_ADMIN_PW` env var | Keycloak admin password |
-| `--realm` | No | `tazama` | Keycloak realm name |
-| `--dry-run` | No | off | Print all actions without making any API calls |
-
-### Examples
-
-**Basic usage (admin password via env var):**
+For a local Keycloak, pass the URL and the admin password from `TAZAMA_KEYCLOAK_ADMIN_PASSWORD` in `core/secrets.env`:
 
 ```bash
-# Linux / macOS
-export KC_ADMIN_PW="admin-secret"
-python add-tenant.py --domain acme.com --tenant-id ACME --password "S3cur3P@ss!"
+python utils/add-tenant.py --domain acme.com --tenant-id ACME --password '<user password>' \
+  --keycloak-url http://localhost:8080 --admin-password '<admin password>'
 ```
 
-```powershell
-# Windows PowerShell
-$env:KC_ADMIN_PW = 'admin-secret'
-node add-tenant.js --domain acme.com --tenant-id ACME --password 'S3cur3P@ss!'
-```
-
-**Targeting a local Keycloak instance:**
-
-```bash
-python add-tenant.py --domain acme.com --tenant-id ACME --password "S3cur3P@ss!" \
-  --keycloak-url http://localhost:8080 --realm tazama
-```
-
-**Dry run - preview all actions without making changes:**
-
-```bash
-python add-tenant.py --domain acme.com --tenant-id ACME --password "S3cur3P@ss!" --dry-run
-node add-tenant.js  --domain acme.com --tenant-id ACME --password "S3cur3P@ss!" --dry-run
-```
-
-### Password quoting in PowerShell
-
-Passwords containing special characters (`$`, `@`, `^`, `*`, `!`) require careful quoting in PowerShell:
-
-- Use **single quotes** for passwords that contain `$` (prevents variable interpolation): `'P@ss$word'`
-- Use **double quotes** for passwords that start with `@` (prevents splatting): `"@P@ssword"`
-- Passwords that contain both `$` and start with `@` should be passed via the `KC_ADMIN_PW` environment variable and the `--password` argument quoted appropriately, or stored in a variable first:
-
-  ```powershell
-  $pw = '@P@ss$word'
-  node add-tenant.js --domain acme.com --tenant-id ACME --password $pw
-  ```
-
-### Sample output
-
-```text
-=== Add tenant: ACME | domain: acme.com | realm: tazama ===
-
-[1/4] Authenticating as admin...
-      OK
-
-[2/4] Ensuring group subgroups for ACME.COM...
-  Create group 'ACME.COM' under parent <id>
-  ...
-      Done.
-
-[3/4] Creating 12 users...
-  Create user cms-administrator@acme.com
-    Assign user to group <id>
-  ...
-
-[4/4] Done. Tenant ACME (acme.com) provisioned with 12 users.
-      Users can log in at https://cms.beta.tazama.org etc. with their @acme.com email addresses.
-
-==================================================
-TENANT ONBOARDING REPORT
-==================================================
-TenantId: ACME
-
-https://cms.beta.tazama.org
-  cms-administrator@acme.com
-  cms-compliance-officer@acme.com
-  cms-investigator@acme.com
-  cms-supervisor@acme.com
-
-https://tcs.beta.tazama.org
-  tcs-approver@acme.com
-  tcs-editor@acme.com
-  tcs-exporter@acme.com
-  tcs-publisher@acme.com
-
-https://trs.beta.tazama.org
-  trs-approver@acme.com
-  trs-editor@acme.com
-  trs-publisher@acme.com
-
-https://tms.beta.tazama.org
-https://admin.beta.tazama.org
-
-  tazama-api-client@acme.com
-
-password: S3cur3P@ss!
-
-==================================================
-KEYCLOAK GROUP ASSIGNMENTS
-==================================================
-  cms-administrator@acme.com
-    -> /tazama-cms/CMS_ADMIN/ACME.COM
-  ...
-==================================================
-```
+Add `--dry-run` to preview the changes first.
 
 <div style="text-align: right"><a href="#top">Top</a></div>
 
@@ -882,15 +703,17 @@ Every human user in the realm has the password **`password`**:
 
 | Username | Groups |
 |---|---|
-| `tazama-user@tazama.org` | `/tazama-batch`, `/tazama-conditions`, `/tazama-config`, `/tazama-reports`, `/tazama-tms` (attribute `TENANT_ID=DEFAULT`) |
+| `tazama-user@tazama.org`, `tazama-api-client@tazama.org` | `/tazama-batch/TAZAMA.ORG`, `/tazama-conditions/TAZAMA.ORG`, `/tazama-config/TAZAMA.ORG`, `/tazama-reports/TAZAMA.ORG`, `/tazama-tms/TAZAMA.ORG` |
 | `tenant-001-user`, `tenant-002-user` | `/tazama-conditions`, `/tazama-tms`, `/tazama-config`, `/tazama-reports` - each in its own `tenant-00x` subgroup |
-| `cms-administrator@tazama.org`, `cms-compliance-officer@tazama.org`, `cms-investigator@tazama.org`, `cms-supervisor@tazama.org` | The matching `/tazama-cms/<ROLE>` group |
-| `tcs-approver@tazama.org`, `tcs-editor@tazama.org`, `tcs-exporter@tazama.org`, `tcs-publisher@tazama.org` | The matching `/tazama-tcs/<role>` group |
-| `trs-approver@tazama.org`, `trs-editor@tazama.org`, `trs-publisher@tazama.org` | The matching `/tazama-trs/<role>` group |
+| `cms-administrator@tazama.org`, `cms-compliance-officer@tazama.org`, `cms-investigator@tazama.org`, `cms-supervisor@tazama.org` | The matching `/tazama-cms/<ROLE>/TAZAMA.ORG` group |
+| `tcs-approver@tazama.org`, `tcs-editor@tazama.org`, `tcs-exporter@tazama.org`, `tcs-publisher@tazama.org` | The matching `/tazama-tcs/<role>/TAZAMA.ORG` group |
+| `trs-approver@tazama.org`, `trs-editor@tazama.org`, `trs-publisher@tazama.org` | The matching `/tazama-trs/<role>/TAZAMA.ORG` group |
 | `jupyter-user@tazama.org` | `/tazama-jupyter/JUPYTER_USER/TAZAMA.ORG` |
 | `nifi-admin@tazama.org` | `/tazama-nifi/NIFI_ADMIN/TAZAMA.ORG` |
 
 `service-account-auth-lib-client` is the service account of the `auth-lib-client` client and has no password.
+
+Users have no `TENANT_ID` attribute of their own. The `tenant_id` token claim comes from the tenant group the user is in: every `TAZAMA.ORG` group has `TENANT_ID=DEFAULT`, and each `tenant-00x` group has `TENANT_ID=tenant-00x`. The service, role and tenant groups follow the 3-level layout (service group, role group, tenant group) that auth-service expects when it looks up the users of a role for a tenant.
 
 The Keycloak administrator (`admin`) is not part of this file. Keycloak creates it in its built-in `master` realm on its first start, from `KEYCLOAK_ADMIN` in [`env/keycloak.env`](./env/keycloak.env) and `TAZAMA_KEYCLOAK_ADMIN_PASSWORD` in `core/secrets.env`.
 
@@ -902,7 +725,7 @@ The realm contains everything the BIAR JupyterHub needs to log users in through 
 |---|---|
 | Realm roles `JUPYTER_USER`, `JUPYTER_ADMIN` | JupyterHub admits holders of either role; `JUPYTER_ADMIN` holders become hub administrators. |
 | Group `tazama-jupyter` with role groups `JUPYTER_USER` and `JUPYTER_ADMIN` | Each role group carries the realm role of the same name, so members of any subgroup inherit it. |
-| Org subgroups `TAZAMA.ORG` under each role group | Attribute `TENANT_ID=TAZAMA`. Users are placed here, never directly in the role group. |
+| Org subgroups `TAZAMA.ORG` under each role group | Attribute `TENANT_ID=DEFAULT`. Users are placed here, never directly in the role group. |
 | Client `jupyterhub` | Confidential client, standard (authorization code) flow only. |
 | Protocol mapper `realm-roles-userinfo` on that client | Puts the realm roles in a flat `roles` claim in the userinfo response. Keycloak does not do this by default, and without it JupyterHub rejects every login. |
 | User `jupyter-user@tazama.org` | Test user with `JUPYTER_USER` access. |
@@ -915,7 +738,7 @@ The realm also contains what the BIAR NiFi needs when it runs with `NIFI_AUTH=ke
 |---|---|
 | Realm role `NIFI_ADMIN` | NiFi gives holders full administrator rights. NiFi has no tenant isolation, so there is no lesser role. |
 | Group `tazama-nifi` with role group `NIFI_ADMIN` | The role group carries the `NIFI_ADMIN` realm role, so members of any subgroup inherit it. |
-| Org subgroup `TAZAMA.ORG` under `NIFI_ADMIN` | Attribute `TENANT_ID=TAZAMA`. Users are placed here, never directly in the role group. |
+| Org subgroup `TAZAMA.ORG` under `NIFI_ADMIN` | Attribute `TENANT_ID=DEFAULT`. Users are placed here, never directly in the role group. |
 | Client `nifi` | Confidential client, standard (authorization code) flow only. |
 | Protocol mapper `realm-roles-userinfo` on that client | Puts the realm roles in a flat `roles` claim, which NiFi reads as the user's groups. |
 | User `nifi-admin@tazama.org` | Test user with `NIFI_ADMIN` access. |
@@ -967,7 +790,7 @@ To change a running realm without losing data, use the Keycloak Administration C
 - **Keep the placeholders.** An export of a running realm (see [Exporting the Keycloak Tazama realm](#exporting-the-keycloak-tazama-realm)) contains the resolved values, including the live client secret, instead of the `${...}` placeholders. Before you commit an export as `00-tazama-test-realm.json`, put the placeholders back on the `jupyterhub` and `nifi` clients (`secret`, `redirectUris`, `webOrigins` and the `post.logout.redirect.uris` attribute), and check that no real secret or password is left in the file.
 - **Placeholder syntax.** Keycloak replaces `${NAME:default}` with the value of the environment variable `NAME`, or with `default` if it is not set. Values such as `${role_offline-access}` are Keycloak message keys and must be left unchanged.
 - **Passwords in the file.** Users are defined with a plain-text `credentials` entry (`"type": "password"`, `"temporary": false`). Keycloak hashes the value on import.
-- **Granting JupyterHub access to a tenant.** The [tenant scripts](#adding-tenants-and-users-to-keycloak) do not create JupyterHub groups. Add an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) under `/tazama-jupyter/JUPYTER_USER` and/or `/tazama-jupyter/JUPYTER_ADMIN`, and put the users in it. No JupyterHub configuration change is needed.
+- **Granting JupyterHub access to a tenant.** The [tenant scripts](#adding-tenants-and-users-to-keycloak) create the org subgroup under `/tazama-jupyter/JUPYTER_USER` and a `jupyter-user@<domain>` user in it. For administrator access, add an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) under `/tazama-jupyter/JUPYTER_ADMIN` and put the users in it. No JupyterHub configuration change is needed.
 
 <div style="text-align: right"><a href="#top">Top</a></div>
 
