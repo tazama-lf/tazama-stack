@@ -6,7 +6,17 @@ services:
     hostname: valkey
     image: valkey/valkey:7.2.5
     restart: always
-    command: "valkey-server --port 6379 --loglevel verbose"
+    command:
+      - valkey-server
+      - --port
+      - "6379"
+      - --loglevel
+      - verbose
+      - --requirepass
+      - ${TAZAMA_VALKEY_PASSWORD:?set it in core/secrets.env}
+    environment:
+      # Used by valkey-cli in the healthcheck
+      - REDISCLI_AUTH=${TAZAMA_VALKEY_PASSWORD:?set it in core/secrets.env}
     healthcheck:
       test: ["CMD-SHELL", "valkey-cli -p 6379 ping | grep PONG"]
       interval: 1s
@@ -27,7 +37,7 @@ services:
       start_period: 120s
     environment:
         - POSTGRES_USER=postgres
-        - POSTGRES_PASSWORD=unused
+        - POSTGRES_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
 
   nats:
     container_name: nats

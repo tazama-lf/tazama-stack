@@ -16,11 +16,11 @@ services:
       NIFI_AUTH: ${NIFI_AUTH:-none}
       KEYCLOAK_ISSUER_URL: ${NIFI_KEYCLOAK_ISSUER_URL:-http://host.docker.internal:8080/realms/tazama}
       KEYCLOAK_CLIENT_ID: ${NIFI_KEYCLOAK_CLIENT_ID:-nifi}
-      KEYCLOAK_CLIENT_SECRET: ${TAZAMA_NIFI_OIDC_CLIENT_SECRET:-}
+      KEYCLOAK_CLIENT_SECRET: ${TAZAMA_NIFI_OIDC_CLIENT_SECRET?set it in biar/secrets.env (may be empty)}
       NIFI_WEB_PROXY_HOST: ${NIFI_WEB_PROXY_HOST:-localhost:8443}
-      NIFI_SENSITIVE_PROPS_KEY: ${TAZAMA_NIFI_SENSITIVE_PROPS_KEY:-}
-      KEYSTORE_PASSWORD: ${TAZAMA_NIFI_KEYSTORE_PASSWORD:-}
-      TRUSTSTORE_PASSWORD: ${TAZAMA_NIFI_TRUSTSTORE_PASSWORD:-}
+      NIFI_SENSITIVE_PROPS_KEY: ${TAZAMA_NIFI_SENSITIVE_PROPS_KEY?set it in biar/secrets.env (may be empty)}
+      KEYSTORE_PASSWORD: ${TAZAMA_NIFI_KEYSTORE_PASSWORD?set it in biar/secrets.env (may be empty)}
+      TRUSTSTORE_PASSWORD: ${TAZAMA_NIFI_TRUSTSTORE_PASSWORD?set it in biar/secrets.env (may be empty)}
     ports:
       # none mode: HTTP, this machine only by default
       - "${NIFI_BIND_ADDRESS:-127.0.0.1}:${NIFI_PORT:-8088}:8088"

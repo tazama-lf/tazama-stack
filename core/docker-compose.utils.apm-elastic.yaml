@@ -29,7 +29,7 @@ services:
     environment:
       APM_ACTIVE: true
       APM_URL: http://apm-server:8200
-      APM_SECRET_TOKEN: ""
+      APM_SECRET_TOKEN: ${TAZAMA_APM_SECRET_TOKEN?set it in core/secrets.env (may be empty)}
 
   event-director:
     depends_on:
@@ -38,7 +38,7 @@ services:
     environment:
       APM_ACTIVE: true
       APM_URL: http://apm-server:8200
-      APM_SECRET_TOKEN: ""
+      APM_SECRET_TOKEN: ${TAZAMA_APM_SECRET_TOKEN?set it in core/secrets.env (may be empty)}
   
   rule-901:
     depends_on:
@@ -47,7 +47,7 @@ services:
     environment:
       APM_ACTIVE: true
       APM_URL: http://apm-server:8200
-      APM_SECRET_TOKEN: ""
+      APM_SECRET_TOKEN: ${TAZAMA_APM_SECRET_TOKEN?set it in core/secrets.env (may be empty)}
 
   typology-processor:
     depends_on:
@@ -56,7 +56,7 @@ services:
     environment:
       APM_ACTIVE: true
       APM_URL: http://apm-server:8200
-      APM_SECRET_TOKEN: ""
+      APM_SECRET_TOKEN: ${TAZAMA_APM_SECRET_TOKEN?set it in core/secrets.env (may be empty)}
 
   event-adjudicator:
     depends_on:
@@ -65,4 +65,4 @@ services:
     environment:
       APM_ACTIVE: true
       APM_URL: http://apm-server:8200
-      APM_SECRET_TOKEN: ""
+      APM_SECRET_TOKEN: ${TAZAMA_APM_SECRET_TOKEN?set it in core/secrets.env (may be empty)}

@@ -24,6 +24,7 @@
   - [7.3. Docker Compose YAML structure](#73-docker-compose-yaml-structure)
   - [7.4. Adding tenants and users to Keycloak](#74-adding-tenants-and-users-to-keycloak)
   - [7.5. Keycloak realm defaults and the JupyterHub client](#keycloak-realm-defaults-and-the-jupyterhub-client)
+  - [7.6. Original default values](#original-default-values)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -98,7 +99,9 @@ C:\Tazama\GitHub>
 
 ## 3.2. Using the Tazama installation script for menu-driven deployment
 
-First, start the Docker Desktop for Windows application.
+First, create `core/secrets.env`: copy `core/secrets.env.template` to `core/secrets.env` and fill in every `[required]` key. For a local machine you can use the public test values in [Original default values](#original-default-values). The launcher stops if `secrets.env` is missing, and Docker Compose stops if a required key is empty. See [section 6 of the repository README](../README.md#6-secrets) for the rules.
+
+Then start the Docker Desktop for Windows application.
 
 With Docker Desktop running: from your Windows Command prompt and from inside the `tazama-stack` folder, execute the following command and follow the prompts:
 
@@ -124,14 +127,15 @@ Select docker deployment type:
 5. Docker Utilities
 6. Database Utilities
 7. Consoles
+8. Audit secrets
 
-Select option (1-7), or (q)uit:
+Select option (1-8), or (q)uit:
 Enter your choice:
 ```
 
 This menu offers a convenient way to trigger various Tazama deployment options. To make a selection to install Tazama in the specified manner, type `1`, `2`, `3`, or `4` at the "Enter your choice:" prompt and press ENTER.
 
-We'll talk more about options `5`, `6`, and `7` a little later.
+We'll talk more about options `5`, `6`, and `7` a little later. Option `8` checks your `secrets.env` against the template without showing any value.
 
 ### 1. Public (GitHub)
 
@@ -510,18 +514,22 @@ Check the [Postman repository readme](https://github.com/tazama-lf/postman#the-f
 
 # 5. TROUBLESHOOTING TIPS
 
+Run the `docker compose` commands in this section from the `core/` folder. Compose resolves the `--env-file` and `-f` paths against the current folder.
+
 ### If you want to restart or alter certain processors 
 
 Start/Restart individual services with
-`docker compose up -p tazama -d --force-recreate <service>`    
+`docker compose --env-file .env --env-file secrets.env -p tazama-core -f <compose files> up -d --force-recreate <service>`    
 
 Try running following if changes are not reflecting  
-`docker compose up -p tazama -d --build --force-recreate`  
+`docker compose --env-file .env --env-file secrets.env -p tazama-core -f <compose files> up -d --build --force-recreate`  
+
+Replace `-f <compose files>` with the same `-f` files the launcher used for your deployment. Every `docker compose` command that reads compose files needs both env files (see [section 6.4 of the repository README](../README.md#64-running-docker-compose-by-hand)).
 
 You can trash your container followed by deleting the image in docker if none of the above works.  
 
 ### Stopping individual (or multiple) services  
-`docker compose down <service> <service2> <service3>`
+`docker compose --env-file .env --env-file secrets.env -p tazama-core -f <compose files> down <service> <service2> <service3>`
 
 To easily idetify the name of a service, perform a
 
@@ -884,7 +892,7 @@ Every human user in the realm has the password **`password`**:
 
 `service-account-auth-lib-client` is the service account of the `auth-lib-client` client and has no password.
 
-The Keycloak administrator (`admin` / `password`) is not part of this file. Keycloak creates it in its built-in `master` realm from `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD` in [`env/keycloak.env`](./env/keycloak.env).
+The Keycloak administrator (`admin`) is not part of this file. Keycloak creates it in its built-in `master` realm on its first start, from `KEYCLOAK_ADMIN` in [`env/keycloak.env`](./env/keycloak.env) and `TAZAMA_KEYCLOAK_ADMIN_PASSWORD` in `core/secrets.env`.
 
 ### JupyterHub objects
 
@@ -916,28 +924,31 @@ The realm also contains what the BIAR NiFi needs when it runs with `NIFI_AUTH=ke
 
 Two settings each of the `jupyterhub` and `nifi` clients differ per deployment. The realm file holds placeholders for them, which Keycloak resolves from its own container environment during the import:
 
-| Realm file placeholder | Keycloak container variable | Local default | Used for |
+| Realm file placeholder | Keycloak container variable | Set from | Used for |
 |---|---|---|---|
-| `${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}` | `JUPYTERHUB_PUBLIC_URL` | `http://localhost:8000` | Redirect URI (`<url>/hub/oauth_callback`), web origin and post-logout redirect |
-| `${JUPYTERHUB_OIDC_CLIENT_SECRET:jupyterhub-test-secret}` | `JUPYTERHUB_OIDC_CLIENT_SECRET` | `jupyterhub-test-secret` | Client secret |
-| `${NIFI_PUBLIC_URL:https://localhost:8443}` | `NIFI_PUBLIC_URL` | `https://localhost:8443` | NiFi redirect URI (`<url>/nifi-api/access/oidc/callback`) and post-logout redirect |
-| `${TAZAMA_NIFI_OIDC_CLIENT_SECRET:nifi-test-secret}` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `nifi-test-secret` | NiFi client secret |
+| `${JUPYTERHUB_PUBLIC_URL:http://localhost:8000}` | `JUPYTERHUB_PUBLIC_URL` | `JUPYTERHUB_PUBLIC_URL` in `core/.env` (default `http://localhost:8000`) | Redirect URI (`<url>/hub/oauth_callback`), web origin and post-logout redirect |
+| `${JUPYTERHUB_OIDC_CLIENT_SECRET:jupyterhub-test-secret}` | `JUPYTERHUB_OIDC_CLIENT_SECRET` | `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` in `core/secrets.env` (required) | Client secret |
+| `${NIFI_PUBLIC_URL:https://localhost:8443}` | `NIFI_PUBLIC_URL` | `NIFI_PUBLIC_URL` in `core/.env` (default `https://localhost:8443`) | NiFi redirect URI (`<url>/nifi-api/access/oidc/callback`) and post-logout redirect |
+| `${TAZAMA_NIFI_OIDC_CLIENT_SECRET:nifi-test-secret}` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `core/secrets.env` (required) | NiFi client secret |
 
-The `keycloak` service in [`docker-compose.base.auth.yaml`](./docker-compose.base.auth.yaml) passes these variables through from `core/.env` (or the shell), falling back to the local defaults. To change them, set them in `core/.env` before the realm is first imported:
+The `keycloak` service in [`docker-compose.base.auth.yaml`](./docker-compose.base.auth.yaml) sets these container variables. The defaults after the colon in the realm file are never used, because the service always sets the variables. To change the values, set them before the realm is first imported - the URLs in `core/.env`, the secrets in `core/secrets.env`:
 
 ```
+# core/.env
 JUPYTERHUB_PUBLIC_URL=https://jupyter.example.org
-JUPYTERHUB_OIDC_CLIENT_SECRET=<a long random value>
 NIFI_PUBLIC_URL=https://nifi.example.org:443
+
+# core/secrets.env
+TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET=<a long random value>
 TAZAMA_NIFI_OIDC_CLIENT_SECRET=<a long random value>
 ```
 
-The hub must use the same values: `JUPYTERHUB_PUBLIC_URL` and `KEYCLOAK_CLIENT_SECRET` in `biar/env/biar-jupyterhub.env`. NiFi must use the same client secret: `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `biar/.env`. The local defaults on both sides already match.
+The hub must use the same values: `JUPYTERHUB_PUBLIC_URL` in `biar/env/biar-jupyterhub.env` and `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` in `biar/secrets.env`. NiFi must use the same client secret: `TAZAMA_NIFI_OIDC_CLIENT_SECRET` in `biar/secrets.env`.
 
 > [!NOTE]
 > Behind a TLS-terminating proxy that sends `X-Forwarded-Port: 443` (such as an AWS ALB), NiFi builds its redirect URI with an explicit `:443`, and Keycloak does not treat `https://host` and `https://host:443` as the same. Include `:443` in `NIFI_PUBLIC_URL` in that case, as in the example above.
 
-On the AWS deployment, `deploy-core.ps1` writes the JupyterHub values to `core/.env` on Server A automatically (see `Set-JupyterHubOidcOverlay` in the [AWS deployment instructions](../infra/aws/aws-deployment-instructions.md)).
+On the AWS deployment, `deploy-core.ps1` writes the public URLs to `core/.env` on Server A and renders the client secrets from SSM into `core/secrets.env` (see sections A.7 and E.3 of the [AWS deployment instructions](../infra/aws/aws-deployment-instructions.md)).
 
 ### When changes take effect
 
@@ -949,7 +960,7 @@ docker rm -f keycloak
 
 Then start the stack again. This also discards every user, password and setting changed in the running Keycloak since the last import.
 
-To change a running realm without losing data, use the Keycloak Administration Console (`http://localhost:8080`, `admin` / `password`) instead, for example **Clients > jupyterhub** for the redirect URI and the secret, or **Users** to reset a password.
+To change a running realm without losing data, use the Keycloak Administration Console (`http://localhost:8080`, user `admin` with the password from `TAZAMA_KEYCLOAK_ADMIN_PASSWORD`) instead, for example **Clients > jupyterhub** for the redirect URI and the secret, or **Users** to reset a password.
 
 ### Maintaining the realm file
 
@@ -957,5 +968,25 @@ To change a running realm without losing data, use the Keycloak Administration C
 - **Placeholder syntax.** Keycloak replaces `${NAME:default}` with the value of the environment variable `NAME`, or with `default` if it is not set. Values such as `${role_offline-access}` are Keycloak message keys and must be left unchanged.
 - **Passwords in the file.** Users are defined with a plain-text `credentials` entry (`"type": "password"`, `"temporary": false`). Keycloak hashes the value on import.
 - **Granting JupyterHub access to a tenant.** The [tenant scripts](#adding-tenants-and-users-to-keycloak) do not create JupyterHub groups. Add an org subgroup (for example `ACME.COM` with attribute `TENANT_ID=ACME`) under `/tazama-jupyter/JUPYTER_USER` and/or `/tazama-jupyter/JUPYTER_ADMIN`, and put the users in it. No JupyterHub configuration change is needed.
+
+<div style="text-align: right"><a href="#top">Top</a></div>
+
+## Original default values
+
+These are the values the core stack used before its credentials moved to `core/secrets.env`. They are published in this repository and its history, so they are **not secret**: use them on your own development machine only, never on a shared or internet-facing server. Copy them into `core/secrets.env` for a local deployment that behaves as before. The values that must match another stack's `secrets.env` are listed in [section 6.2 of the repository README](../README.md#62-values-shared-between-stacks).
+
+| Key | Original default | Used by |
+|---|---|---|
+| `TAZAMA_CORE_PG_PASSWORD` | `unused` | core-postgres, every core processor, the rules, Hasura |
+| `TAZAMA_VALKEY_PASSWORD` | `redis-password` | Valkey, every core processor that caches. Valkey had no password before; this is the value DEMS and EMS already sent. |
+| `TAZAMA_KEYCLOAK_ADMIN_PASSWORD` | `password` | Keycloak bootstrap admin `admin` |
+| `TAZAMA_AUTH_CLIENT_SECRET` | `auth-lib-client-test-secret` | auth-service; matches the `auth-lib-client` secret in the test realm |
+| `TAZAMA_RELAY_AUTH_PASSWORD` | `password` | relay-service-rest; the password of every user in the test realm |
+| `TAZAMA_JUPYTERHUB_OIDC_CLIENT_SECRET` | `jupyterhub-test-secret` | Keycloak `jupyterhub` client (realm import) |
+| `TAZAMA_NIFI_OIDC_CLIENT_SECRET` | `nifi-test-secret` | Keycloak `nifi` client (realm import) |
+| `TAZAMA_DEMO_NEXTAUTH_SECRET` | `Q1+Ojp/rNjpHVVQDVFxBYdhp4ELCZi/cCzGz2xXsD38=` | Tazama demo UI |
+| `TAZAMA_HASURA_ADMIN_SECRET` | `password` | Hasura, hasura-init |
+| `TAZAMA_PGADMIN_PASSWORD` | `password` | core pgAdmin |
+| `TAZAMA_APM_SECRET_TOKEN` | (empty) | APM, when enabled |
 
 <div style="text-align: right"><a href="#top">Top</a></div>

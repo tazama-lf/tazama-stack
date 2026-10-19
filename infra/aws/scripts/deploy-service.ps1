@@ -16,7 +16,7 @@
     working dir and -f file chain). The new service must be defined somewhere in
     that same chain. It then issues:
 
-        docker compose -p <project> <-f chain> up -d --no-deps <Service>
+        docker compose --env-file .env --env-file secrets.env -p <project> <-f chain> up -d --no-deps <Service>
 
     'up' with a single named service plus '--no-deps' creates only that one
     container. Existing containers are not stopped, recreated, or otherwise
@@ -192,21 +192,28 @@ if ($effectiveBranch) {
 # After a repo pull, re-apply the same per-server AWS env overlays the deploy
 # scripts apply. git reset --hard restores committed defaults; the overlays
 # below restore the AWS-specific values (private DNS names, public API URLs,
-# KEYCLOAK_HOSTNAME, demo public URL, etc.) that must not be committed.
+# KEYCLOAK_HOSTNAME, demo public URL, etc.) that must not be committed, and
+# render the server's secrets.env files from SSM. Without a repo pull, only
+# the secrets.env of the service's component group is re-rendered.
+$group = Split-Path -Leaf $workingDir
 if ($effectiveBranch) {
     if ($DryRun) {
-        Write-Host "[$label] [DRY RUN] Would re-apply AWS env overlays for Server $Server." -ForegroundColor Yellow
+        Write-Host "[$label] [DRY RUN] Would re-apply AWS env overlays and secrets.env for Server $Server." -ForegroundColor Yellow
     } else {
         Set-ServerEnvOverlays -Server $Server -InstanceId $instanceId -TofuOutputs $out
         Write-Host "[$label] Overlays applied." -ForegroundColor Green
     }
+} elseif ($DryRun) {
+    Write-Host "[$label] [DRY RUN] Would render $group/secrets.env from SSM." -ForegroundColor Yellow
+} else {
+    Set-ServerSecretsEnv -InstanceId $instanceId -Group $group -ServerLabel $label
 }
 
 # -- Create the new service (additive) ----------------------------------------
 # 'up -d --no-deps <Service>' creates only the named container. --no-deps stops
 # Compose from (re)starting dependencies, so no existing container is touched.
 $composeCmd = (
-    "cd $workingDir && docker compose -p $project $fFlags " +
+    "cd $workingDir && docker compose --env-file .env --env-file secrets.env -p $project $fFlags " +
     "up -d --no-deps $pullFlag $Service"
 ).Trim()
 

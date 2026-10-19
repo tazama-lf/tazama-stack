@@ -4,10 +4,12 @@
     Deploy Server B - tazama-extensions stack (dev build).
 
 .DESCRIPTION
-    1. On Server A: adds DEMS + DEAPI to the running tazama-core project.
-       These APIs must be up before TCS/TRS backends on Server B start.
-    2. On Server B: waits for bootstrap, applies the env overlay, copies
-       the auth public key, then starts the extensions stack.
+    1. On Server A: renders extensions/secrets.env from SSM and adds DEMS +
+       DEAPI to the running tazama-core project. These APIs must be up
+       before TCS/TRS backends on Server B start.
+    2. On Server B: waits for bootstrap, renders extensions/secrets.env from
+       SSM, applies the env overlay, copies the auth public key, then starts
+       the extensions stack.
 
     Run from infra/aws/scripts/ or anywhere - paths are resolved relative
     to this script's location.
@@ -23,11 +25,7 @@
 
 [CmdletBinding()]
 param(
-    [switch]$NoPull,
-
-    # PostgreSQL password for Server B's database and all extension service clients.
-    # If omitted, the local-dev default 'unused' values are left in place.
-    [string]$Password = ''
+    [switch]$NoPull
 )
 
 . "$PSScriptRoot\helpers.ps1"
@@ -71,10 +69,13 @@ Write-Host '[Server A] Applying .env overlay to extensions/.env...'
 Set-RemoteEnvOverlay -InstanceId $idA -OverlayFile $overlayFile -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
 Write-Host '[Server A] .env overlay applied.' -ForegroundColor Green
 
+# extensions/secrets.env on Server A: DEMS / DEAPI secrets from SSM.
+Set-ServerSecretsEnv -InstanceId $idA -Group 'extensions' -ServerLabel 'Server A'
+
 Write-Host '[Server A] Adding DEMS + DEAPI to tazama-core...'
 
 $pullFlag = if ($NoPull) { '' } else { '--pull always' }
-Invoke-RemoteCommand -InstanceId $idA -Command "cd $Script:RemoteRepo/extensions && docker compose -p tazama-core -f ./docker-compose.hub.extensions.apis.yaml up -d $pullFlag".Trim()
+Invoke-RemoteCommand -InstanceId $idA -Command "cd $Script:RemoteRepo/extensions && docker compose --env-file .env --env-file secrets.env -p tazama-core -f ./docker-compose.hub.extensions.apis.yaml up -d $pullFlag".Trim()
 
 Write-Host '[Server A] DEMS + DEAPI up.' -ForegroundColor Green
 
@@ -101,41 +102,9 @@ Set-RemoteEnvOverlay -InstanceId $idB -OverlayFile $overlayFile -RemoteEnvFile $
 
 Write-Host '[Server B] .env overlay applied.' -ForegroundColor Green
 
-# CMS SMTP credentials from SSM (/tazama/smtp_user, /tazama/smtp_pass) into
-# extensions/.env - consumed by case-management-system.env via interpolation.
-Set-SmtpOverlay -InstanceId $idB -ServerLabel 'Server B'
-
-# Apply credentials overlay to extensions/.env and all service env files.
-# Built in-memory from the -Password parameter — never written to a committed file.
-# Skipped entirely when -Password is not supplied.
-if ($Password) {
-    Write-Host '[Server B] Applying credentials overlay to extensions env files...'
-    $extCredOverlay = @"
-POSTGRES_PASSWORD=$Password
-DB_PASSWORD=$Password
-SPRING_DATASOURCE_PASSWORD=$Password
-CONFIGURATION_DATABASE_PASSWORD=$Password
-"@
-    $tmpCred = [System.IO.Path]::GetTempFileName()
-    try {
-        Set-Content $tmpCred $extCredOverlay -Encoding ASCII
-        $extEnvFiles = @(
-            "$Script:RemoteRepo/extensions/.env"
-            "$Script:RemoteRepo/extensions/env/case-management-system.env"
-            "$Script:RemoteRepo/extensions/env/connection-studio.env"
-            "$Script:RemoteRepo/extensions/env/data-enrichment-service.env"
-            "$Script:RemoteRepo/extensions/env/event-monitoring-service.env"
-        )
-        foreach ($envFile in $extEnvFiles) {
-            Set-RemoteEnvOverlay -InstanceId $idB -OverlayFile $tmpCred -RemoteEnvFile $envFile
-        }
-    } finally {
-        Remove-Item $tmpCred -Force -ErrorAction SilentlyContinue
-    }
-    Write-Host '[Server B] Credentials overlay applied.' -ForegroundColor Green
-} else {
-    Write-Warning '[Server B] -Password not supplied — DB passwords left at local-dev defaults.'
-}
+# extensions/secrets.env on Server B: all extensions secrets from SSM
+# (database, CouchDB, SFTP, SMTP, Docker Hub, ...).
+Set-ServerSecretsEnv -InstanceId $idB -Group 'extensions' -ServerLabel 'Server B'
 
 # -- 6. Server B: copy auth public key ----------------------------------------
 # TCS and TRS backends require the auth public key (used for JWT verification).
@@ -155,6 +124,8 @@ Write-Host '[Server B] Auth key copied.' -ForegroundColor Green
 Write-Host '[Server B] Starting tazama-extensions stack...'
 
 $composeArgs = @(
+    '--env-file .env'
+    '--env-file secrets.env'
     '-p tazama-extensions'
     '-f ./docker-compose.extensions.infrastructure.yaml'
     '-f ./docker-compose.hub.extensions.yaml'

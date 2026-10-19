@@ -178,7 +178,7 @@ Elasticsearch integration overlay:
 
 ### 1. GitHub Dev
 ```bash
-docker compose \
+docker compose --env-file .env --env-file secrets.env \
   -f docker-compose.base.infrastructure.yaml \
   -f docker-compose.base.override.yaml \
   -f docker-compose.dev.cfg.yaml \
@@ -188,7 +188,7 @@ docker compose \
 
 ### 2. DockerHub Public
 ```bash
-docker compose \
+docker compose --env-file .env --env-file secrets.env \
   -f docker-compose.base.infrastructure.yaml \
   -f docker-compose.base.override.yaml \
   -f docker-compose.hub.cfg.yaml \
@@ -199,7 +199,7 @@ docker compose \
 
 ### 3. DockerHub Full-service
 ```bash
-docker compose \
+docker compose --env-file .env --env-file secrets.env \
   -f docker-compose.base.infrastructure.yaml \
   -f docker-compose.base.override.yaml \
   -f docker-compose.full.cfg.yaml \
@@ -210,7 +210,7 @@ docker compose \
 
 ### 4. Multi-Tenant
 ```bash
-docker compose \
+docker compose --env-file .env --env-file secrets.env \
   -f docker-compose.base.infrastructure.yaml \
   -f docker-compose.base.override.yaml \
   -f docker-compose.base.auth.yaml \
@@ -347,11 +347,11 @@ DockerHub API services (Server A):
 
 ```bash
 # GitHub builds
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.dev.extensions.apis.yaml up -d
 
 # DockerHub images
-docker compose -p tazama-core \
+docker compose --env-file .env --env-file secrets.env -p tazama-core \
   -f ./docker-compose.hub.extensions.apis.yaml up -d
 ```
 
@@ -359,13 +359,13 @@ docker compose -p tazama-core \
 
 ```bash
 # GitHub builds
-docker compose -p tazama-extensions \
+docker compose --env-file .env --env-file secrets.env -p tazama-extensions \
   -f ./docker-compose.extensions.infrastructure.yaml \
   -f ./docker-compose.dev.extensions.yaml \
   up -d
 
 # DockerHub images
-docker compose -p tazama-extensions \
+docker compose --env-file .env --env-file secrets.env -p tazama-extensions \
   -f ./docker-compose.extensions.infrastructure.yaml \
   -f ./docker-compose.hub.extensions.yaml \
   up -d
@@ -443,14 +443,14 @@ One-shot initialization containers:
 
 ```bash
 # DockerHub images
-docker compose -p tazama-biar \
+docker compose --env-file .env --env-file secrets.env -p tazama-biar \
   -f ./docker-compose.biar.infrastructure.yaml \
   -f ./docker-compose.hub.biar.yaml \
   -f ./docker-compose.utils.init.yaml \
   up -d
 
 # GitHub builds
-docker compose -p tazama-biar \
+docker compose --env-file .env --env-file secrets.env -p tazama-biar \
   -f ./docker-compose.biar.infrastructure.yaml \
   -f ./docker-compose.dev.biar.yaml \
   -f ./docker-compose.utils.init.yaml \

@@ -19,13 +19,13 @@ services:
       - ./hasura:/hasura-metadata
     environment:
       # Metadata database
-      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:@core-postgres:5432/hasura
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}@core-postgres:5432/hasura
       
       # Data source connections
-      HASURA_GRAPHQL_DATABASE_URL_EVENT_HISTORY: postgres://postgres:@core-postgres:5432/event_history
-      HASURA_GRAPHQL_DATABASE_URL_RAW_HISTORY: postgres://postgres:@core-postgres:5432/raw_history
-      HASURA_GRAPHQL_DATABASE_URL_CONFIGURATION: postgres://postgres:@core-postgres:5432/configuration
-      HASURA_GRAPHQL_DATABASE_URL_EVALUATION: postgres://postgres:@core-postgres:5432/evaluation
+      HASURA_GRAPHQL_DATABASE_URL_EVENT_HISTORY: postgres://postgres:${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}@core-postgres:5432/event_history
+      HASURA_GRAPHQL_DATABASE_URL_RAW_HISTORY: postgres://postgres:${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}@core-postgres:5432/raw_history
+      HASURA_GRAPHQL_DATABASE_URL_CONFIGURATION: postgres://postgres:${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}@core-postgres:5432/configuration
+      HASURA_GRAPHQL_DATABASE_URL_EVALUATION: postgres://postgres:${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}@core-postgres:5432/evaluation
       
       # Auto-apply metadata on startup
       # HASURA_GRAPHQL_METADATA_DIR: /hasura/metadata
@@ -35,8 +35,8 @@ services:
       HASURA_GRAPHQL_DEV_MODE: "true"
       HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup,http-log,webhook-log,websocket-log,query-log
       
-      # No authentication
-      HASURA_GRAPHQL_ADMIN_SECRET: "password"
+      # Admin secret for the console and metadata API
+      HASURA_GRAPHQL_ADMIN_SECRET: ${TAZAMA_HASURA_ADMIN_SECRET:?set it in core/secrets.env}
       HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous
       HASURA_GRAPHQL_CORS_DOMAIN: "*"
       HASURA_GRAPHQL_ENABLE_TELEMETRY: "false"
@@ -57,6 +57,8 @@ services:
         condition: service_healthy
     volumes:
       - ./hasura/init.sh:/init.sh:ro
+    environment:
+      HASURA_GRAPHQL_ADMIN_SECRET: ${TAZAMA_HASURA_ADMIN_SECRET:?set it in core/secrets.env}
     entrypoint:
       - /bin/sh
       - -c

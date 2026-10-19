@@ -8,11 +8,11 @@ services:
       - .env
     environment:
       - CONFIGURATION_DATABASE_USER=postgres
-      - CONFIGURATION_DATABASE_PASSWORD=unused
+      - CONFIGURATION_DATABASE_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
       - EVENT_HISTORY_DATABASE_USER=postgres
-      - EVENT_HISTORY_DATABASE_PASSWORD=unused
+      - EVENT_HISTORY_DATABASE_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
       - RAW_HISTORY_DATABASE_USER=postgres
-      - RAW_HISTORY_DATABASE_PASSWORD=unused
+      - RAW_HISTORY_DATABASE_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
     restart: always
     depends_on:
       valkey:
@@ -28,11 +28,11 @@ services:
       - .env
     environment:
       - CONFIGURATION_DATABASE_USER=postgres
-      - CONFIGURATION_DATABASE_PASSWORD=unused
+      - CONFIGURATION_DATABASE_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
       - EVENT_HISTORY_DATABASE_USER=postgres
-      - EVENT_HISTORY_DATABASE_PASSWORD=unused
+      - EVENT_HISTORY_DATABASE_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
       - RAW_HISTORY_DATABASE_USER=postgres
-      - RAW_HISTORY_DATABASE_PASSWORD=unused
+      - RAW_HISTORY_DATABASE_PASSWORD=${TAZAMA_CORE_PG_PASSWORD:?set it in core/secrets.env}
     restart: always
     depends_on:
       valkey:
