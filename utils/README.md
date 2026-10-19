@@ -10,7 +10,6 @@ Unless stated otherwise, scripts target the Keycloak instance at `https://keyclo
 | --- | --- |
 | [add-tenant.py](add-tenant.py) | Onboard a new tenant organization: create its Keycloak groups and users (Python) |
 | [add-tenant.js](add-tenant.js) | Same as add-tenant.py, implemented in Node.js |
-| [patch-tenant-id.py](patch-tenant-id.py) | Set or repair the `TENANT_ID` user attribute for all users of a given domain |
 
 ## add-tenant.py / add-tenant.js
 
@@ -23,12 +22,14 @@ For a tenant with domain `example.org` and tenant ID `EXAMPLE`, the script:
    - `/tazama-tcs/approver`, `/tazama-tcs/editor`, `/tazama-tcs/exporter`, `/tazama-tcs/publisher`
    - `/tazama-trs/approver`, `/tazama-trs/editor`, `/tazama-trs/publisher`
    - `/tazama-jupyter/JUPYTER_USER`
-   - `/tazama-conditions`, `/tazama-config`, `/tazama-reports`, `/tazama-tms` (organization subgroup directly under the service group)
+   - `/tazama-batch` (optional), `/tazama-conditions`, `/tazama-config`, `/tazama-reports`, `/tazama-tms` (organization subgroup directly under the service group)
 2. Sets the `TENANT_ID` attribute on every organization (leaf) subgroup to the value passed with `--tenant-id`. If a subgroup already exists without the attribute, it is healed in place, so re-running the script against an existing tenant repairs earlier gaps.
-3. Creates 13 users (`cms-administrator@<domain>`, `cms-compliance-officer@`, `cms-investigator@`, `cms-supervisor@`, `tcs-approver@`, `tcs-editor@`, `tcs-exporter@`, `tcs-publisher@`, `trs-approver@`, `trs-editor@`, `trs-publisher@`, `tazama-api-client@`, `jupyter-user@`), each with the `TENANT_ID` user attribute set to the `--tenant-id` value and the shared password from `--password`. Existing users get their password reset and their `TENANT_ID` attribute corrected.
+3. Creates 13 users (`cms-administrator@<domain>`, `cms-compliance-officer@`, `cms-investigator@`, `cms-supervisor@`, `tcs-approver@`, `tcs-editor@`, `tcs-exporter@`, `tcs-publisher@`, `trs-approver@`, `trs-editor@`, `trs-publisher@`, `tazama-api-client@`, `jupyter-user@`) with the shared password from `--password`. Existing users get their password reset. Users carry no `TENANT_ID` attribute of their own: the `tenant_id` token claim comes from the organization group they belong to.
 4. Assigns each user to its group paths and prints an onboarding report.
 
-The top-level service groups (including `/tazama-jupyter`) must already exist in the realm; the script stops with an error otherwise. The `jupyter-user@` account inherits the `JUPYTER_USER` realm role from the `/tazama-jupyter/JUPYTER_USER` group, which is what JupyterHub's Keycloak login checks.
+The top-level service groups (including `/tazama-jupyter`) must already exist in the realm; the script stops with an error otherwise. The exception is `/tazama-batch`: when it is missing, its paths are skipped with a notice.
+
+Users created by earlier versions of this script may still have a `TENANT_ID` user attribute. A user attribute takes precedence over the group value, so remove it in the Keycloak admin console if it is wrong. The `jupyter-user@` account inherits the `JUPYTER_USER` realm role from the `/tazama-jupyter/JUPYTER_USER` group, which is what JupyterHub's Keycloak login checks.
 
 The tenant ID is deliberately an explicit argument and is never derived from the domain: the mapping is not mechanical (for example, the organization `processlab.tech` has tenant ID `CLEARDATA`).
 
@@ -64,16 +65,6 @@ Example, run on the extensions host:
 ```
 python add-tenant.py --tenant-id EXAMPLE --cms-seed-only --psql-command "docker exec -i extensions-postgres psql -U postgres -d tazama_cms"
 ```
-
-## patch-tenant-id.py
-
-Sets the `TENANT_ID` user attribute on all existing users whose username ends in `@<domain>`. Use this to repair users created before add-tenant.py set the attribute, or users created with a wrong value.
-
-```
-python patch-tenant-id.py --domain example.org --tenant-id EXAMPLE [--admin-password <pw>]
-```
-
-If `--tenant-id` is omitted the script falls back to deriving the value from the first domain label (uppercased) and prints a warning. Always pass the canonical tenant ID explicitly unless you have verified the derived value is correct.
 
 ## Adding new utilities
 
