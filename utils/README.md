@@ -30,7 +30,7 @@ For a tenant with domain `example.org` and tenant ID `EXAMPLE`, the script:
 
 The top-level service groups (including `/tazama-jupyter`) must already exist in the realm; the script stops with an error otherwise. The exception is `/tazama-batch`: when it is missing, its paths are skipped with a notice.
 
-Users created by earlier versions of this script may still have a `TENANT_ID` user attribute. A user attribute takes precedence over the group value, so remove it in the Keycloak admin console if it is wrong. The `jupyter-user@` account inherits the `JUPYTER_USER` realm role from the `/tazama-jupyter/JUPYTER_USER` group, which is what JupyterHub's Keycloak login checks.
+Users created by earlier versions of this script may still have a `TENANT_ID` user attribute, which takes precedence over the group value. When the script finds an existing user, it removes that attribute and keeps the user's other attributes. The `jupyter-user@` account inherits the `JUPYTER_USER` realm role from the `/tazama-jupyter/JUPYTER_USER` group, which is what JupyterHub's Keycloak login checks.
 
 The tenant ID is deliberately an explicit argument and is never derived from the domain: the mapping is not mechanical (for example, the organization `processlab.tech` has tenant ID `CLEARDATA`).
 

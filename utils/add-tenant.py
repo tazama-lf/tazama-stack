@@ -85,6 +85,9 @@ CMS_REFERENCE_IDS = [
 # Tenant IDs are interpolated into SQL; restrict to a safe character set
 TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
+# Plain http is allowed only for these Keycloak hosts
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
 # --------------------------------------------------------------------------- #
 # HTTP helpers (stdlib only - no requests dependency)
 # --------------------------------------------------------------------------- #
@@ -359,10 +362,29 @@ def create_user(
                 token=token,
                 data={"type": "password", "value": password, "temporary": False},
             )
+            clear_user_tenant_id(base_url, realm, token, users[0])
             return uid
     else:
         print(f"  ERROR creating user '{username}': HTTP {status} - {body}")
         return None
+
+
+def clear_user_tenant_id(base_url, realm, token, user):
+    """Remove a TENANT_ID user attribute left by earlier versions of this script.
+    It would take precedence over the tenant group's value. Other attributes are kept."""
+    attributes = dict(user.get("attributes") or {})
+    if "TENANT_ID" not in attributes:
+        return
+    old = attributes.pop("TENANT_ID")
+    print(f"    (removing legacy TENANT_ID user attribute {old})")
+    status, body = http(
+        "PUT",
+        f"{base_url}/admin/realms/{realm}/users/{user['id']}",
+        token=token,
+        data={**user, "attributes": attributes},
+    )
+    if status not in (200, 204):
+        print(f"    WARNING: could not remove TENANT_ID (HTTP {status}) - {body}")
 
 
 def seed_cms_reference_ids(psql_command, tenant_id, dry_run=False):
@@ -486,6 +508,16 @@ def main():
     realm = args.realm
     base_url = args.keycloak_url.rstrip("/")
     dry_run = args.dry_run
+
+    # Never send the admin password or tokens unencrypted to a remote host.
+    parsed_url = urllib.parse.urlparse(base_url)
+    if not (
+        parsed_url.scheme == "https"
+        or (parsed_url.scheme == "http" and parsed_url.hostname in LOOPBACK_HOSTS)
+    ):
+        parser.error(
+            f"--keycloak-url must use https (http is allowed only for localhost): {base_url}"
+        )
 
     print(f"\n=== Add tenant: {args.tenant_id} | domain: {domain} | realm: {realm} ===")
     if dry_run:

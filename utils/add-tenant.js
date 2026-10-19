@@ -49,6 +49,9 @@ const CMS_REFERENCE_IDS = [
 // Tenant IDs are interpolated into SQL; restrict to a safe character set
 const TENANT_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
 
+// Plain http is allowed only for these Keycloak hosts
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 // ---------------------------------------------------------------------------
 // HTTP helper (stdlib only)
 // ---------------------------------------------------------------------------
@@ -196,12 +199,28 @@ async function createUser(baseUrl, realm, token, username, firstName, lastName, 
       await request('PUT', `${baseUrl}/admin/realms/${realm}/users/${user.id}/reset-password`, {
         token, body: { type: 'password', value: password, temporary: false },
       });
+      await clearUserTenantId(baseUrl, realm, token, user);
       return user.id;
     }
   } else {
     console.error(`  ERROR creating user '${username}': HTTP ${status}`, data);
   }
   return null;
+}
+
+// Remove a TENANT_ID user attribute left by earlier versions of this script.
+// It would take precedence over the tenant group's value. Other attributes are kept.
+async function clearUserTenantId(baseUrl, realm, token, user) {
+  const attributes = { ...(user.attributes ?? {}) };
+  if (!('TENANT_ID' in attributes)) return;
+  console.log(`    (removing legacy TENANT_ID user attribute ${JSON.stringify(attributes.TENANT_ID)})`);
+  delete attributes.TENANT_ID;
+  const { status, data } = await request('PUT', `${baseUrl}/admin/realms/${realm}/users/${user.id}`, {
+    token, body: { ...user, attributes },
+  });
+  if (![200, 204].includes(status)) {
+    console.warn(`    WARNING: could not remove TENANT_ID (HTTP ${status})`, data);
+  }
 }
 
 async function assignUserToGroup(baseUrl, realm, token, userId, groupId, dryRun) {
@@ -359,6 +378,14 @@ async function main() {
   const domain      = opts.domain.toLowerCase();
   const groupDomain = domain.toUpperCase();
   const { realm, keycloakUrl: baseUrl, dryRun } = opts;
+
+  // Never send the admin password or tokens unencrypted to a remote host.
+  const parsedUrl = new URL(baseUrl);
+  if (!(parsedUrl.protocol === 'https:' ||
+        (parsedUrl.protocol === 'http:' && LOOPBACK_HOSTS.has(parsedUrl.hostname)))) {
+    console.error(`ERROR: --keycloak-url must use https (http is allowed only for localhost): ${baseUrl}`);
+    process.exit(1);
+  }
 
   console.log(`\n=== Add tenant: ${opts.tenantId} | domain: ${domain} | realm: ${realm} ===`);
   if (dryRun) console.log('*** DRY-RUN MODE - no changes will be made ***');
