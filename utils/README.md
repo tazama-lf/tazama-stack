@@ -10,6 +10,7 @@ Unless stated otherwise, scripts target the Keycloak instance at `https://keyclo
 | --- | --- |
 | [add-tenant.py](add-tenant.py) | Onboard a new tenant organization: create its Keycloak groups and users (Python) |
 | [add-tenant.js](add-tenant.js) | Same as add-tenant.py, implemented in Node.js |
+| [smoke-test.py](smoke-test.py) | Validate a local authenticated full-service Core + Extensions deployment: containers, front-end logins and tenant groups |
 
 ## add-tenant.py / add-tenant.js
 
@@ -65,6 +66,33 @@ Example, run on the extensions host:
 ```
 python add-tenant.py --tenant-id EXAMPLE --cms-seed-only --psql-command "docker exec -i extensions-postgres psql -U postgres -d tazama_cms"
 ```
+
+## smoke-test.py
+
+Validates a local deployment after it starts. Unlike the other scripts, it targets the local Docker host and the default test realm, not the beta Keycloak. It supports one deployment shape only: Core deployed with `tazama-core.bat` option 3 (Full-service, DockerHub) with the auth add-on, plus Extensions deployed with `tazama-extensions.bat` option 4 (DockerHub). The DEMS/DEAPI add-on (Extensions option 2) is checked too if present. Any other shape, such as dev builds, multitenant or the public rules, makes the script stop with exit code 2.
+
+The script checks:
+
+1. **Deployment shape.** It reads the compose files recorded on the `tazama-core` and `tazama-extensions` containers and requires the full-service, auth and DockerHub files.
+2. **Services and images.** It resolves the services in those same compose files and fails on any service without a container. It also fails on any image that was not pulled from a registry.
+3. **Containers.** It waits up to `--wait` seconds for every container to be running, and healthy if it has a healthcheck. One-shot jobs, such as `hasura-init` and `case-management-system-migrate`, must have exited with code 0. Containers must then run for `--settle` seconds without restarting, which catches crash loops that only look "running" between restarts. A container that restarted before settling is a warning. So is a container whose healthcheck cannot execute in its image.
+4. **Front-end loops (CMS, TCS, TRS).** For each front-end:
+   - The page must be served.
+   - The backend URL configured in the front-end container must answer the CORS preflight for the front-end's origin.
+   - Every default user of that front-end logs in through that backend.
+   - Each token must carry the user's role, `tenant_id` `DEFAULT` from the Keycloak token itself, and the three-tier group path, e.g. `/tazama-cms/CMS_SUPERVISOR/TAZAMA.ORG`, in `tenant_details`.
+   - For CMS, `/v1/auth/me` is called. The investigator, supervisor and compliance officer also call `/v1/user/list-by-role`, which must return the tenant's investigator and supervisor.
+5. **Core API loop.** It logs in directly against auth-service as `tazama-user`, `tazama-api-client`, `tenant-001-user` and `tenant-002-user`, checking each user's tenant and group path.
+
+The only changes the script makes are the logins. Tokens, passwords and the resolved compose configuration are never printed. Keycloak locks accounts after repeated failed logins, so fix a wrong `--password` before re-running.
+
+Usage:
+
+```
+python smoke-test.py [--host localhost] [--password <pw>] [--wait 300] [--settle 30] [--http-timeout 15] [--skip-logins]
+```
+
+The password defaults to `$TAZAMA_SMOKE_PASSWORD`, or `password` (the test realm default). The exit code is 0 when every check passed, 1 when any check failed and 2 for an unsupported deployment or when Docker is unavailable.
 
 ## Adding new utilities
 
