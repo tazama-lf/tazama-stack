@@ -4605,7 +4605,7 @@
             <properties>
                 <entry>
                     <key>Database Connection URL</key>
-                    <value>jdbc:postgresql://10.10.80.18:15432/evaluation</value>
+                    <value>jdbc:postgresql://#{core_pg_host}:#{core_pg_port}/evaluation</value>
                 </entry>
                 <entry>
                     <key>Database Driver Class Name</key>
@@ -4629,10 +4629,11 @@
                 </entry>
                 <entry>
                     <key>Database User</key>
-                    <value>postgres</value>
+                    <value>#{pg_user}</value>
                 </entry>
                 <entry>
                     <key>Password</key>
+                    <value>#{pg_password}</value>
                 </entry>
                 <entry>
                     <key>Max Wait Time</key>
@@ -5018,7 +5019,7 @@
             <properties>
                 <entry>
                     <key>Database Connection URL</key>
-                    <value>jdbc:postgresql://10.10.80.18:15432/enrichment</value>
+                    <value>jdbc:postgresql://#{core_pg_host}:#{core_pg_port}/enrichment</value>
                 </entry>
                 <entry>
                     <key>Database Driver Class Name</key>
@@ -5042,10 +5043,11 @@
                 </entry>
                 <entry>
                     <key>Database User</key>
-                    <value>postgres</value>
+                    <value>#{pg_user}</value>
                 </entry>
                 <entry>
                     <key>Password</key>
+                    <value>#{pg_password}</value>
                 </entry>
                 <entry>
                     <key>Max Wait Time</key>
@@ -5459,9 +5461,11 @@
                 </entry>
                 <entry>
                     <key>Access Key</key>
+                    <value>#{ozone_access_key}</value>
                 </entry>
                 <entry>
                     <key>Secret Key</key>
+                    <value>#{ozone_secret_key}</value>
                 </entry>
                 <entry>
                     <key>Credentials File</key>
@@ -5644,7 +5648,7 @@
             <properties>
                 <entry>
                     <key>Database Connection URL</key>
-                    <value>jdbc:postgresql://10.10.80.18:15433/tazama_cms</value>
+                    <value>jdbc:postgresql://#{cms_pg_host}:#{cms_pg_port}/tazama_cms</value>
                 </entry>
                 <entry>
                     <key>Database Driver Class Name</key>
@@ -5668,10 +5672,11 @@
                 </entry>
                 <entry>
                     <key>Database User</key>
-                    <value>postgres</value>
+                    <value>#{pg_user}</value>
                 </entry>
                 <entry>
                     <key>Password</key>
+                    <value>#{pg_password}</value>
                 </entry>
                 <entry>
                     <key>Max Wait Time</key>
@@ -5840,7 +5845,7 @@
             <properties>
                 <entry>
                     <key>Database Connection URL</key>
-                    <value>jdbc:postgresql://10.10.80.18:15432/raw_history</value>
+                    <value>jdbc:postgresql://#{core_pg_host}:#{core_pg_port}/raw_history</value>
                 </entry>
                 <entry>
                     <key>Database Driver Class Name</key>
@@ -5864,10 +5869,11 @@
                 </entry>
                 <entry>
                     <key>Database User</key>
-                    <value>postgres</value>
+                    <value>#{pg_user}</value>
                 </entry>
                 <entry>
                     <key>Password</key>
+                    <value>#{pg_password}</value>
                 </entry>
                 <entry>
                     <key>Max Wait Time</key>
@@ -6036,7 +6042,7 @@
             <properties>
                 <entry>
                     <key>Database Connection URL</key>
-                    <value>jdbc:postgresql://10.10.80.18:15432/event_history</value>
+                    <value>jdbc:postgresql://#{core_pg_host}:#{core_pg_port}/event_history</value>
                 </entry>
                 <entry>
                     <key>Database Driver Class Name</key>
@@ -6060,10 +6066,11 @@
                 </entry>
                 <entry>
                     <key>Database User</key>
-                    <value>postgres</value>
+                    <value>#{pg_user}</value>
                 </entry>
                 <entry>
                     <key>Password</key>
+                    <value>#{pg_password}</value>
                 </entry>
                 <entry>
                     <key>Max Wait Time</key>
@@ -6232,7 +6239,7 @@
             <properties>
                 <entry>
                     <key>Database Connection URL</key>
-                    <value>jdbc:postgresql://10.10.80.18:15432/configuration</value>
+                    <value>jdbc:postgresql://#{core_pg_host}:#{core_pg_port}/configuration</value>
                 </entry>
                 <entry>
                     <key>Database Driver Class Name</key>
@@ -6256,10 +6263,11 @@
                 </entry>
                 <entry>
                     <key>Database User</key>
-                    <value>postgres</value>
+                    <value>#{pg_user}</value>
                 </entry>
                 <entry>
                     <key>Password</key>
+                    <value>#{pg_password}</value>
                 </entry>
                 <entry>
                     <key>Max Wait Time</key>
@@ -27099,7 +27107,7 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                     </entry>
                     <entry>
                         <key>Endpoint Override URL</key>
-                        <value>http://10.10.80.20:9878</value>
+                        <value>#{pozone}</value>
                     </entry>
                     <entry>
                         <key>Signer Override</key>
