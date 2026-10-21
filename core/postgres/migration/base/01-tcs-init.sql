@@ -37,8 +37,13 @@ CREATE TABLE IF NOT EXISTS tcs_config (
     comments TEXT,
     payload_json JSONB,
     payload_xml xml,
-    related_transaction TEXT
+    related_transaction TEXT,
+    revision INTEGER NOT NULL DEFAULT 0
 );
+
+-- backfill for hosts whose core-postgres volume already existed before this column was added
+ALTER TABLE tcs_config
+    ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS tcs_cron_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), 
