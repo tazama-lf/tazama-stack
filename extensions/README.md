@@ -313,6 +313,8 @@ If the backend exits immediately with a config-validation error naming `SESSION_
 
 > On plain HTTP, `SESSION_COOKIE_SECURE=true` can silently break login: most browsers discard the session cookie so every request 401s (behaviour varies by browser and host — e.g. Chromium still permits `Secure` cookies on `localhost`). `CORS_ALLOWED_ORIGINS` must be the frontend origin, not the backend URL.
 
+If the error names `SMTP_NOTIFICATIONS`, set it to `true` or `false` in `extensions/env/case-management-system.env`. It ships as `false` (email notifications off). With `true`, the backend also refuses to start unless `SMTP_HOST` and `MAIL_FROM` are set and `SMTP_USER` / `SMTP_PASS` are both set or both empty: fill in `TAZAMA_SMTP_USER` and `TAZAMA_SMTP_PASS` in `extensions/secrets.env` before switching email on.
+
 ### DEMS/DEAPI pre-flight fails with "tazama-core is not running"
 
 Ensure you have started the core stack on this machine first using `tazama-core.bat` (or `.sh`) from the `core/` folder. The pre-flight launcher checks for a running `tazama-core` Compose project before deploying.
