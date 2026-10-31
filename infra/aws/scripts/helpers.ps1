@@ -386,11 +386,17 @@ function Set-BiarServiceEnvOverlay {
 #     decrypts longer values incorrectly);
 #   - TAZAMA_NIFI_*: none of $ | & \ (NiFi's sed-based property substitution);
 #     the sensitive-props key needs at least 12 characters;
-#   - TAZAMA_ENRICHMENT_ENCRYPTION_KEY: exactly 32 bytes (AES-256 key).
+#   - TAZAMA_ENRICHMENT_ENCRYPTION_KEY: exactly 32 bytes (AES-256 key);
+#   - TAZAMA_DEVTESTOPS_ENCRYPTION_KEY / _IV: exactly 32 / 16 bytes.
 # TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED and TAZAMA_SFTP_PASSWORD_HASH are derived
 # locally from the SFTP password and the enrichment key (see
 # Get-TcsSftpCiphertext and Get-SftpPasswordHash in
 # utils/sftp-derived-secrets.ps1, shared with the extensions launcher).
+# TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED is derived from the DevTestOps PAT,
+# key and IV (see Get-DevTestOpsTokenCiphertext in
+# utils/devtestops-derived-secrets.ps1).
+# With -Server, keys in $Script:SecretsServerOnly that belong to another
+# server are written empty: no SSM read, not required, nothing derived.
 # The content is piped over ssh stdin (no secret on any command line) and
 # written with mode 600. No value is ever printed.
 $Script:SecretsSsmMap = [ordered]@{
@@ -421,6 +427,10 @@ $Script:SecretsSsmMap = [ordered]@{
     TAZAMA_COUCHDB_COOKIE_SECRET         = '/tazama/creds/couchdb/cookie-secret'
     TAZAMA_DOCKERHUB_USERNAME            = '/tazama/creds/dockerhub/username'
     TAZAMA_DOCKERHUB_TOKEN               = '/tazama/creds/dockerhub/token'
+    TAZAMA_DEVTESTOPS_GITHUB_PAT         = '/tazama/creds/devtestops/github-pat'
+    TAZAMA_DEVTESTOPS_ENCRYPTION_KEY     = '/tazama/creds/devtestops/encryption-key'
+    TAZAMA_DEVTESTOPS_ENCRYPTION_IV      = '/tazama/creds/devtestops/encryption-iv'
+    TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED = $null   # derived, see Get-DevTestOpsTokenCiphertext
     TAZAMA_SMTP_USER                     = '/tazama/creds/smtp/user'
     TAZAMA_SMTP_PASS                     = '/tazama/creds/smtp/password'
     TAZAMA_S3_ACCESS_KEY                 = '/tazama/creds/ozone/s3_access_key'
@@ -428,12 +438,24 @@ $Script:SecretsSsmMap = [ordered]@{
 }
 # Optional in the template (local NIFI_AUTH=none needs none of them), but AWS
 # always runs NiFi in keycloak mode (Set-NifiAuthOverlay).
+# The DevTestOps keys are optional in the template (rule-studio-devtestops
+# then does not start), but AWS always runs it.
 $Script:SecretsAwsRequired = @(
     'TAZAMA_NIFI_OIDC_CLIENT_SECRET'
     'TAZAMA_NIFI_SENSITIVE_PROPS_KEY'
     'TAZAMA_NIFI_KEYSTORE_PASSWORD'
     'TAZAMA_NIFI_TRUSTSTORE_PASSWORD'
+    'TAZAMA_DEVTESTOPS_GITHUB_PAT'
+    'TAZAMA_DEVTESTOPS_ENCRYPTION_KEY'
+    'TAZAMA_DEVTESTOPS_ENCRYPTION_IV'
 )
+# Keys only one server uses. rule-studio-devtestops runs on Server B; Server A
+# renders extensions/secrets.env only for DEMS / DEAPI.
+$Script:SecretsServerOnly = @{
+    TAZAMA_DEVTESTOPS_GITHUB_PAT     = 'B'
+    TAZAMA_DEVTESTOPS_ENCRYPTION_KEY = 'B'
+    TAZAMA_DEVTESTOPS_ENCRYPTION_IV  = 'B'
+}
 $Script:SecretsUrlKeys = @(
     'TAZAMA_CORE_PG_PASSWORD'
     'TAZAMA_EXT_PG_PASSWORD'
@@ -446,11 +468,15 @@ $Script:SecretsUrlKeys = @(
 # only changes when an input changes and no container is recreated on every
 # deploy.
 . (Join-Path $PSScriptRoot '..\..\..\utils\sftp-derived-secrets.ps1')
+# Get-DevTestOpsTokenCiphertext: the encrypted DevTestOps GitHub token, shared
+# with the extensions launcher.
+. (Join-Path $PSScriptRoot '..\..\..\utils\devtestops-derived-secrets.ps1')
 
 function Set-ServerSecretsEnv {
     param(
         [Parameter(Mandatory)][string]$InstanceId,
         [Parameter(Mandatory)][ValidateSet('core', 'extensions', 'biar')][string]$Group,
+        [ValidateSet('A', 'B', 'C')][string]$Server,
         [string]$ServerLabel = 'server'
     )
 
@@ -473,8 +499,13 @@ function Set-ServerSecretsEnv {
         throw "[$ServerLabel] $Group/secrets.env.template has keys without an SSM mapping in helpers.ps1 (`$Script:SecretsSsmMap): $($unmapped -join ', ')"
     }
 
+    $otherServer = @($keys.Keys | Where-Object {
+        $Server -and $Script:SecretsServerOnly.ContainsKey($_) -and $Script:SecretsServerOnly[$_] -ne $Server
+    })
+
     # Batched SSM read (get-parameters takes at most 10 names per call).
-    $names = @($keys.Keys | ForEach-Object { $Script:SecretsSsmMap[$_] } | Where-Object { $_ } | Sort-Object -Unique)
+    $names = @($keys.Keys | Where-Object { $otherServer -notcontains $_ } |
+        ForEach-Object { $Script:SecretsSsmMap[$_] } | Where-Object { $_ } | Sort-Object -Unique)
     $ssm = @{}
     for ($i = 0; $i -lt $names.Count; $i += 10) {
         $batch = $names[$i..([Math]::Min($i + 9, $names.Count - 1))]
@@ -487,6 +518,7 @@ function Set-ServerSecretsEnv {
     $values = [ordered]@{}
     $absentOptional = @()
     foreach ($key in $keys.Keys) {
+        if ($otherServer -contains $key) { $values[$key] = ''; continue }
         $name = $Script:SecretsSsmMap[$key]
         if (-not $name) { continue }   # derived below
         $v = if ($ssm.ContainsKey($name)) { $ssm[$name] } else { '' }
@@ -503,10 +535,15 @@ function Set-ServerSecretsEnv {
         if ($key -like 'TAZAMA_NIFI_*' -and $v -match '[$|&\\]') { throw "$where contains one of `$ | & \ - not supported by NiFi. Use a hex value (openssl rand -hex 32)." }
         if ($key -eq 'TAZAMA_NIFI_SENSITIVE_PROPS_KEY' -and $v -and $v.Length -lt 12) { throw "$where must be at least 12 characters." }
         if ($key -eq 'TAZAMA_ENRICHMENT_ENCRYPTION_KEY' -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ne 32) { throw "$where must be exactly 32 bytes (AES-256 key)." }
+        if ($key -eq 'TAZAMA_DEVTESTOPS_ENCRYPTION_KEY' -and $v -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ne 32) { throw "$where must be exactly 32 bytes (AES-256 key)." }
+        if ($key -eq 'TAZAMA_DEVTESTOPS_ENCRYPTION_IV' -and $v -and [System.Text.Encoding]::UTF8.GetByteCount($v) -ne 16) { throw "$where must be exactly 16 bytes (AES IV)." }
         $values[$key] = $v
     }
     if ($absentOptional) {
         Write-Host "[$ServerLabel] Optional secrets not in SSM (rendered empty): $($absentOptional -join ', ')"
+    }
+    if ($otherServer) {
+        Write-Host "[$ServerLabel] Secrets of another server (rendered empty): $($otherServer -join ', ')"
     }
     if ($keys.Contains('TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED')) {
         $values['TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED'] = Get-TcsSftpCiphertext `
@@ -515,6 +552,14 @@ function Set-ServerSecretsEnv {
     if ($keys.Contains('TAZAMA_SFTP_PASSWORD_HASH')) {
         $values['TAZAMA_SFTP_PASSWORD_HASH'] = Get-SftpPasswordHash `
             -Password $values['TAZAMA_SFTP_PASSWORD'] -Key $values['TAZAMA_ENRICHMENT_ENCRYPTION_KEY']
+    }
+    if ($keys.Contains('TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED')) {
+        $pat = $values['TAZAMA_DEVTESTOPS_GITHUB_PAT']
+        $dtoKey = $values['TAZAMA_DEVTESTOPS_ENCRYPTION_KEY']
+        $dtoIv = $values['TAZAMA_DEVTESTOPS_ENCRYPTION_IV']
+        $values['TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED'] = if ($pat -and $dtoKey -and $dtoIv) {
+            Get-DevTestOpsTokenCiphertext -Pat $pat -Key $dtoKey -Iv $dtoIv
+        } else { '' }
     }
 
     $lines = @(
@@ -550,7 +595,9 @@ function Set-ServerSecretsEnv {
 #              KC_HOSTNAME_PORT from keycloak.env; the tazama-demo,
 #              JupyterHub and NiFi public URLs (see Set-DemoUiOverlay,
 #              Set-JupyterHubOidcOverlay, Set-NifiOidcOverlay).
-#   Server B : extensions/secrets.env; extensions/.env overlay.
+#   Server B : extensions/secrets.env; extensions/.env overlay;
+#              extensions/env/rule-studio-devtestops.env overlay (GitHub
+#              organisation).
 #   Server C : biar/secrets.env; biar/.env overlay (host names, S3A_ENDPOINT);
 #              NiFi keycloak mode (see Set-NifiAuthOverlay - throws when the
 #              custom domain is missing); public Keycloak / JupyterHub URLs in
@@ -574,11 +621,11 @@ function Set-ServerEnvOverlays {
 
     switch ($Server) {
         'A' {
-            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'core' -ServerLabel $label
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'core' -Server $Server -ServerLabel $label
 
             if (-not $SkipExtensionsOverlay) {
                 # DEMS / DEAPI run from extensions/ on Server A
-                Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
+                Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -Server $Server -ServerLabel $label
 
                 # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
                 Write-Host "[$label] Re-applying extensions .env overlay..."
@@ -613,16 +660,22 @@ function Set-ServerEnvOverlays {
             Set-NifiOidcOverlay -InstanceId $InstanceId -NifiPublicUrl $TofuOutputs.NifiPublicUrl -ServerLabel $label
         }
         'B' {
-            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -Server $Server -ServerLabel $label
 
             # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
             Write-Host "[$label] Re-applying extensions .env overlay..."
             Set-RemoteEnvOverlay -InstanceId $InstanceId `
                 -OverlayFile (Join-Path $Script:TemplatesDir 'env-extensions.tpl') `
                 -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
+
+            # extensions/env/rule-studio-devtestops.env: GitHub organisation
+            Write-Host "[$label] Re-applying rule-studio-devtestops env overlay..."
+            Set-RemoteEnvOverlay -InstanceId $InstanceId `
+                -OverlayFile (Join-Path $Script:TemplatesDir 'env-rule-studio-devtestops.tpl') `
+                -RemoteEnvFile "$Script:RemoteRepo/extensions/env/rule-studio-devtestops.env"
         }
         'C' {
-            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'biar' -ServerLabel $label
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'biar' -Server $Server -ServerLabel $label
 
             # biar/.env: SERVER_A/B/C_HOST, S3A_ENDPOINT
             Write-Host "[$label] Re-applying biar .env overlay..."

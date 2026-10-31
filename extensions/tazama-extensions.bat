@@ -108,6 +108,16 @@ if errorlevel 1 (
     goto :menu
 )
 
+:: Derive the encrypted rule-studio-devtestops GitHub token (README.md, section 8.5)
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\utils\devtestops-derived-secrets.ps1" -GroupDir "%CD%"
+if errorlevel 1 (
+    echo.
+    echo  ERROR: fix secrets.env and retry.
+    echo.
+    pause
+    goto :menu
+)
+
 set "cmd=!COMPOSE! -p tazama-extensions"
 set "cmd=!cmd! -f ./docker-compose.extensions.infrastructure.yaml"
 if "%BUILD_TYPE%"=="dev" (

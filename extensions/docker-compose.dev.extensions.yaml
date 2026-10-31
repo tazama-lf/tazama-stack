@@ -68,7 +68,7 @@ services:
       - .env
     environment:
       - VITE_API_URL=http://${SERVER_B_HOST}:${TRS_BACKEND_PORT}
-      - VITE_SANDBOX_API_URL=http://${SERVER_A_HOST}:3050
+      - VITE_SANDBOX_API_URL=http://${SERVER_B_HOST}:${DEVTESTOPS_PORT}
       - VITE_NATS_API_URL=http://${SERVER_A_HOST}:4000
       - VITE_SIMULATION_ENDPOINT=http://${SERVER_A_HOST}:5000/v1/evaluate/iso20022/pacs.002.001.12
       - VITE_DEMS_ENDPOINT=http://${SERVER_B_HOST}:${DEMS_PORT}
@@ -77,6 +77,24 @@ services:
     restart: always
     ports:
       - ${TRS_FRONTEND_PORT}:5174
+
+  # Rule repositories and test runs for rule-studio (GitHub). Starts only once
+  # the TAZAMA_DEVTESTOPS_* keys in secrets.env are set (README.md, section 8.5).
+  # Its Dockerfile takes GH_TOKEN as a BuildKit secret, not a build arg.
+  rule-studio-devtestops:
+    container_name: rule-studio-devtestops
+    image: !reset null
+    build:
+      context: https://github.com/tazama-lf/rule-studio-devtestops.git#${DEVTESTOPS_BRANCH}
+      secrets:
+        - GH_TOKEN
+    env_file:
+      - env/rule-studio-devtestops.env
+    restart: always
+    ports:
+      - ${DEVTESTOPS_PORT}:3050
+    volumes:
+      - ./auth/test-public-key.pem:/auth/test-public-key.pem:ro
     
   case-management-system-backend:
     image: !reset null
@@ -139,3 +157,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+# Build secrets (BuildKit): read from the GH_TOKEN environment variable, the
+# same one the build args above use.
+secrets:
+  GH_TOKEN:
+    environment: GH_TOKEN

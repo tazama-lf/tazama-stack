@@ -103,6 +103,15 @@ deploy_extensions() {
         return 1
     fi
 
+    # Derive the encrypted rule-studio-devtestops GitHub token (README.md, section 8.5)
+    if ! bash ../utils/devtestops-derived-secrets.sh "$(pwd)"; then
+        echo ""
+        echo " ERROR: fix secrets.env and retry."
+        echo ""
+        pause
+        return 1
+    fi
+
     local cmd="$COMPOSE -p $EXTENSIONS_PROJECT"
     cmd="$cmd -f ./docker-compose.extensions.infrastructure.yaml"
     if [[ "$build_type" == "dev" ]]; then

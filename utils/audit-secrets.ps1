@@ -3,9 +3,12 @@
 # Audits <group>/secrets.env against <group>/secrets.env.template without
 # printing any value. Reports keys that are missing, required but empty, or
 # unknown, and checks that TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED decrypts to
-# TAZAMA_SFTP_PASSWORD and that TAZAMA_SFTP_PASSWORD_HASH matches it.
+# TAZAMA_SFTP_PASSWORD, that TAZAMA_SFTP_PASSWORD_HASH matches it, and that
+# TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED is TAZAMA_DEVTESTOPS_GITHUB_PAT
+# encrypted with the DevTestOps key and IV.
 # [generated] keys may be empty or missing: the extensions launcher derives
-# them before every deployment (utils/sftp-derived-secrets.ps1).
+# them before every deployment (utils/sftp-derived-secrets.ps1,
+# utils/devtestops-derived-secrets.ps1).
 # Exit code 0 = no findings, 1 = findings.
 #
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File utils/audit-secrets.ps1 -GroupDir core
@@ -163,6 +166,49 @@ if ($templateKeys.Contains($hashKey)) {
         }
         else {
             Write-Host "SFTP hash check FAILED: $hashKey does not match TAZAMA_SFTP_PASSWORD. The extensions launcher derives it again before the next deployment."
+            $findings++
+        }
+    }
+    Write-Host ''
+}
+
+$tokenKey = 'TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED'
+if ($templateKeys.Contains($tokenKey)) {
+    $token = $values[$tokenKey]
+    $pat = $values['TAZAMA_DEVTESTOPS_GITHUB_PAT']
+    $dtoKey = $values['TAZAMA_DEVTESTOPS_ENCRYPTION_KEY']
+    $dtoIv = $values['TAZAMA_DEVTESTOPS_ENCRYPTION_IV']
+    if ([string]::IsNullOrEmpty($pat) -and -not [string]::IsNullOrEmpty($token)) {
+        Write-Host "DevTestOps token check FAILED: $tokenKey is set but TAZAMA_DEVTESTOPS_GITHUB_PAT is empty, so plain docker compose still passes the old token to rule-studio-devtestops. The extensions launcher clears it before the next deployment."
+        $findings++
+    }
+    elseif ([string]::IsNullOrEmpty($pat)) {
+        Write-Host 'DevTestOps token check skipped: TAZAMA_DEVTESTOPS_GITHUB_PAT is not set (rule-studio-devtestops does not start).'
+    }
+    elseif ([string]::IsNullOrEmpty($dtoKey) -or [string]::IsNullOrEmpty($dtoIv)) {
+        Write-Host 'DevTestOps token check FAILED: TAZAMA_DEVTESTOPS_ENCRYPTION_KEY and TAZAMA_DEVTESTOPS_ENCRYPTION_IV must be set when TAZAMA_DEVTESTOPS_GITHUB_PAT is.'
+        $findings++
+    }
+    elseif ([Text.Encoding]::UTF8.GetByteCount($dtoKey) -ne 32 -or [Text.Encoding]::UTF8.GetByteCount($dtoIv) -ne 16) {
+        Write-Host 'DevTestOps token check FAILED: TAZAMA_DEVTESTOPS_ENCRYPTION_KEY must be exactly 32 bytes and TAZAMA_DEVTESTOPS_ENCRYPTION_IV exactly 16 bytes.'
+        $findings++
+    }
+    elseif ([string]::IsNullOrEmpty($token)) {
+        Write-Host "DevTestOps token check skipped: $tokenKey is not generated yet. The extensions launcher derives it before the next deployment."
+    }
+    else {
+        $aes = [Security.Cryptography.Aes]::Create()
+        $aes.Mode = [Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [Security.Cryptography.PaddingMode]::PKCS7
+        $aes.Key = [Text.Encoding]::UTF8.GetBytes($dtoKey)
+        $aes.IV = [Text.Encoding]::UTF8.GetBytes($dtoIv)
+        $patBytes = [Text.Encoding]::UTF8.GetBytes($pat)
+        $expectedToken = -join ($aes.CreateEncryptor().TransformFinalBlock($patBytes, 0, $patBytes.Length) | ForEach-Object { $_.ToString('x2') })
+        if ($token -ieq $expectedToken) {
+            Write-Host "DevTestOps token check OK: $tokenKey matches TAZAMA_DEVTESTOPS_GITHUB_PAT."
+        }
+        else {
+            Write-Host "DevTestOps token check FAILED: $tokenKey does not match TAZAMA_DEVTESTOPS_GITHUB_PAT. The extensions launcher derives it again before the next deployment."
             $findings++
         }
     }

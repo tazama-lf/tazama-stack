@@ -212,7 +212,7 @@ if ($effectiveBranch) {
 } elseif ($DryRun) {
     Write-Host "[$label] [DRY RUN] Would render $group/secrets.env from SSM." -ForegroundColor Yellow
 } else {
-    Set-ServerSecretsEnv -InstanceId $instanceId -Group $group -ServerLabel $label
+    Set-ServerSecretsEnv -InstanceId $instanceId -Group $group -Server $Server -ServerLabel $label
 }
 
 # -- Recreate -------------------------------------------------------------------------------
