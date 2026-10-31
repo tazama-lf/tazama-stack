@@ -16,7 +16,7 @@
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 failures=0
-source_only_keys='TAZAMA_SFTP_PASSWORD'
+source_only_keys=$'TAZAMA_SFTP_PASSWORD\nTAZAMA_DEVTESTOPS_GITHUB_PAT'
 
 # Prints a titled list of unique lines from stdin; counts them as failures.
 finding() {

@@ -4,9 +4,12 @@
 # Audits <group>/secrets.env against <group>/secrets.env.template without
 # printing any value. Reports keys that are missing, required but empty, or
 # unknown, and checks that TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED decrypts to
-# TAZAMA_SFTP_PASSWORD and that TAZAMA_SFTP_PASSWORD_HASH matches it (both
-# need openssl). [generated] keys may be empty or missing: the extensions
-# launcher derives them before every deployment (utils/sftp-derived-secrets.sh).
+# TAZAMA_SFTP_PASSWORD, that TAZAMA_SFTP_PASSWORD_HASH matches it, and that
+# TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED is TAZAMA_DEVTESTOPS_GITHUB_PAT
+# encrypted with the DevTestOps key and IV (these checks need openssl).
+# [generated] keys may be empty or missing: the extensions launcher derives
+# them before every deployment (utils/sftp-derived-secrets.sh,
+# utils/devtestops-derived-secrets.sh).
 # Exit code 0 = no findings, 1 = findings.
 #
 # Usage: bash utils/audit-secrets.sh <group folder>
@@ -190,6 +193,37 @@ if in_template "$hash_key"; then
         echo "SFTP hash check OK: $hash_key matches TAZAMA_SFTP_PASSWORD."
     else
         echo "SFTP hash check FAILED: $hash_key does not match TAZAMA_SFTP_PASSWORD. The extensions launcher derives it again before the next deployment."
+        findings=$((findings + 1))
+    fi
+    echo ""
+fi
+
+token_key=TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED
+if in_template "$token_key"; then
+    lookup_secret "$token_key"; token="$found_value"
+    lookup_secret TAZAMA_DEVTESTOPS_GITHUB_PAT; pat="$found_value"
+    lookup_secret TAZAMA_DEVTESTOPS_ENCRYPTION_KEY; dto_key="$found_value"
+    lookup_secret TAZAMA_DEVTESTOPS_ENCRYPTION_IV; dto_iv="$found_value"
+    dto_key_hex=$(printf '%s' "$dto_key" | od -An -v -tx1 | tr -d ' \n')
+    dto_iv_hex=$(printf '%s' "$dto_iv" | od -An -v -tx1 | tr -d ' \n')
+    if [[ -z "$pat" ]]; then
+        echo "DevTestOps token check skipped: TAZAMA_DEVTESTOPS_GITHUB_PAT is not set (rule-studio-devtestops does not start)."
+    elif [[ -z "$dto_key" || -z "$dto_iv" ]]; then
+        echo "DevTestOps token check FAILED: TAZAMA_DEVTESTOPS_ENCRYPTION_KEY and TAZAMA_DEVTESTOPS_ENCRYPTION_IV must be set when TAZAMA_DEVTESTOPS_GITHUB_PAT is."
+        findings=$((findings + 1))
+    elif [[ ${#dto_key_hex} -ne 64 || ${#dto_iv_hex} -ne 32 ]]; then
+        echo "DevTestOps token check FAILED: TAZAMA_DEVTESTOPS_ENCRYPTION_KEY must be exactly 32 bytes and TAZAMA_DEVTESTOPS_ENCRYPTION_IV exactly 16 bytes."
+        findings=$((findings + 1))
+    elif [[ -z "$token" ]]; then
+        echo "DevTestOps token check skipped: $token_key is not generated yet. The extensions launcher derives it before the next deployment."
+    elif ! command -v openssl > /dev/null 2>&1; then
+        echo "DevTestOps token check skipped: openssl not found."
+    elif ! expected_token=$(printf '%s' "$pat" | openssl enc -aes-256-cbc -K "$dto_key_hex" -iv "$dto_iv_hex" | od -An -v -tx1 | tr -d ' \n') || [[ -z "$expected_token" ]]; then
+        echo "DevTestOps token check skipped: openssl failed."
+    elif [[ "$(printf '%s' "$token" | tr 'A-F' 'a-f')" == "$expected_token" ]]; then
+        echo "DevTestOps token check OK: $token_key matches TAZAMA_DEVTESTOPS_GITHUB_PAT."
+    else
+        echo "DevTestOps token check FAILED: $token_key does not match TAZAMA_DEVTESTOPS_GITHUB_PAT. The extensions launcher derives it again before the next deployment."
         findings=$((findings + 1))
     fi
     echo ""

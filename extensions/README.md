@@ -23,6 +23,7 @@
   - [8.2. Docker Compose YAML structure](#82-docker-compose-yaml-structure)
   - [8.3. Original default values](#83-original-default-values)
   - [8.4. Generating the SFTP values by hand](#84-generating-the-sftp-values-by-hand)
+  - [8.5. Generating the DevTestOps token by hand](#85-generating-the-devtestops-token-by-hand)
 
 <h1></h1>
 <h1 style="color: red;">WARNING - THIS TAZAMA REPOSITORY IS TO BE USED FOR DEMONSTRATION, EXPLORATION AND TESTING PURPOSES ONLY.</h1>
@@ -179,6 +180,11 @@ Before it runs Docker Compose, the launcher brings the two values derived from `
 
 A value that already matches the password is kept, including one you made by hand. An empty or outdated value is derived again and its line in `secrets.env` is rewritten; the launcher prints which key it updated, never the value. The password is processed on this machine only: it does not appear on a command line or in a container. If `TAZAMA_SFTP_PASSWORD` is empty or longer than 15 bytes, or `TAZAMA_ENRICHMENT_ENCRYPTION_KEY` is not exactly 32 bytes, the launcher stops before deploying. On Linux and macOS this step needs `openssl`; where it has no `passwd -6` (LibreSSL on macOS), the hash is computed in the `atmoz/sftp` image, with the password passed on standard input.
 
+It then brings `TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED` up to date (`utils/devtestops-derived-secrets.ps1` or `.sh`): `TAZAMA_DEVTESTOPS_GITHUB_PAT` encrypted with `TAZAMA_DEVTESTOPS_ENCRYPTION_KEY` and `TAZAMA_DEVTESTOPS_ENCRYPTION_IV` for `rule-studio-devtestops`. While any of the three is empty, the token stays empty, the launcher says so, and the deployment continues without a working `rule-studio-devtestops` (Section 5.3). If all three are set but the key is not exactly 32 bytes or the IV not exactly 16 bytes, the launcher stops before deploying.
+
+> [!NOTE]
+> A `secrets.env` created before `rule-studio-devtestops` was added lacks its four `TAZAMA_DEVTESTOPS_*` lines, and Docker Compose then stops with "set it in extensions/secrets.env (may be empty)". Copy the four lines from `secrets.env.template` (they may stay empty). The launcher's **Audit secrets** option lists missing keys.
+
 | Option | Build source |
 |---|---|
 | 3 | GitHub source builds (branches controlled in `.env`) |
@@ -249,6 +255,7 @@ These infrastructure services are started as part of the `tazama-extensions` Com
 | TCS frontend | `connection-studio-frontend` | 5173 | Transaction Configuration Studio web UI |
 | TRS backend | `rule-studio-backend` | 3005 | Transaction Rule Studio API |
 | TRS frontend | `rule-studio-frontend` | 5174 | Transaction Rule Studio web UI |
+| TRS DevTestOps | `rule-studio-devtestops` | 3050 | Creates and manages rule repositories in a GitHub organisation and runs their tests, for the TRS frontend. Needs a GitHub PAT, key and IV in `secrets.env` and `GITHUB_ORG_NAME` in `env/rule-studio-devtestops.env` (Section 8.5); without them it restarts in a loop, and the other services are unaffected |
 | CMS backend | `case-management-system-backend` | 3090 | Case Management System API |
 | CMS frontend | `case-management-system-frontend` | 5175 | Case Management System web UI |
 | Voila | `case-management-system-voila` | 18866 | Voila notebook server - serves CMS visualisation notebooks (account network, alert history, conditions timeline, counterparty network, transaction graphs) embedded in the CMS frontend |
@@ -270,6 +277,7 @@ After a successful deployment, the following web interfaces are accessible from 
 #### Transaction Rule Studio (TRS)
 - TRS API: <http://localhost:3005>
 - TRS UI: <http://localhost:5174>
+- TRS DevTestOps API: <http://localhost:3050> (health: `/api/health`)
 
 #### Case Management System (CMS)
 - CMS API: <http://localhost:3090>
@@ -372,6 +380,10 @@ Before `secrets.env` existed, these values were committed in the compose and env
 | `TAZAMA_COUCHDB_COOKIE_SECRET` | (none - generate: `openssl rand -hex 32`) | CouchDB |
 | `TAZAMA_DOCKERHUB_USERNAME` | (placeholder - a real Docker Hub account is needed) | rule-studio backend |
 | `TAZAMA_DOCKERHUB_TOKEN` | (placeholder - a personal access token of that account is needed) | rule-studio backend |
+| `TAZAMA_DEVTESTOPS_GITHUB_PAT` | (none - new key; a real fine-grained PAT is needed, Section 8.5; empty = service does not start) | source of `TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED` (no container reads it directly) |
+| `TAZAMA_DEVTESTOPS_ENCRYPTION_KEY` | (none - new key; generate: `openssl rand -hex 16`) | rule-studio-devtestops |
+| `TAZAMA_DEVTESTOPS_ENCRYPTION_IV` | (none - new key; generate: `openssl rand -hex 8`) | rule-studio-devtestops |
+| `TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED` | (none - new key, derived by the launcher; leave it empty) | rule-studio-devtestops |
 | `TAZAMA_SMTP_USER` | (empty) | CMS, connection-studio |
 | `TAZAMA_SMTP_PASS` | (empty) | CMS, connection-studio |
 | `TAZAMA_APM_SECRET_TOKEN` | (empty) | DEAPI |
@@ -429,5 +441,57 @@ Remove-Variable s, b, p, key, pb, ct
 ```
 
 `Aes` uses CBC mode and PKCS7 padding by default, as connection-studio expects. Everything runs inside PowerShell; the history records the commands, not the password.
+
+<div style="text-align: right"><a href="#top">Top</a></div>
+
+## 8.5. Generating the DevTestOps token by hand
+
+`rule-studio-devtestops` creates rule repositories from a template in a GitHub organisation and runs their tests. It needs:
+
+- `GITHUB_ORG_NAME` in `env/rule-studio-devtestops.env`: the organisation the rule repositories are created in;
+- `TAZAMA_DEVTESTOPS_GITHUB_PAT` in `secrets.env`: a fine-grained personal access token whose resource owner is that organisation, with access to all its repositories and the permissions Administration, Contents and Workflows (read and write), Actions and Metadata (read);
+- `TAZAMA_DEVTESTOPS_ENCRYPTION_KEY` (exactly 32 bytes, `openssl rand -hex 16`) and `TAZAMA_DEVTESTOPS_ENCRYPTION_IV` (exactly 16 bytes, `openssl rand -hex 8`) in `secrets.env`.
+
+The service does not take the PAT itself: it decrypts `TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED` (the PAT encrypted with AES-256-CBC, lowercase hex, no IV prefix) with the key and IV. The launcher derives that value before every deployment of the extensions stack (Section 4.2). You need this section only if you run `docker compose` yourself.
+
+The quickest way is the launcher's own step, which updates `secrets.env` without deploying anything. Run it from the repository root:
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File utils/devtestops-derived-secrets.ps1 -GroupDir extensions   # Windows
+bash utils/devtestops-derived-secrets.sh extensions                                                           # Linux, macOS, Git Bash
+```
+
+To make the value by hand, use one of the procedures below. They prompt for the PAT without showing it, and read the key and IV from `secrets.env`, so set those first. Run them from the `extensions/` folder. Each prints one line; replace the key in `secrets.env` with it, then run the launcher's **Audit secrets** option to check the result. The IV is fixed, so the value is the same as the one the launcher derives.
+
+**bash with OpenSSL (Linux, WSL, Git Bash, macOS):**
+
+```bash
+read -rsp 'GitHub PAT: ' P; echo
+KEY=$(sed -n 's/^TAZAMA_DEVTESTOPS_ENCRYPTION_KEY=//p' secrets.env | tail -n 1 | tr -d "\r'\"")
+IV=$(sed -n 's/^TAZAMA_DEVTESTOPS_ENCRYPTION_IV=//p' secrets.env | tail -n 1 | tr -d "\r'\"")
+CT=$(printf '%s' "$P" | openssl enc -aes-256-cbc -K "$(printf '%s' "$KEY" | od -An -v -tx1 | tr -d ' \n')" -iv "$(printf '%s' "$IV" | od -An -v -tx1 | tr -d ' \n')" | od -An -v -tx1 | tr -d ' \n')
+echo "TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED=$CT"
+unset P KEY IV CT
+```
+
+The PAT reaches `openssl` on standard input only. The key and IV are passed to `openssl enc` as arguments (`-K`, `-iv`), so other users of the same machine could see them in the process list for that moment.
+
+**PowerShell 5.1 or 7 (Windows):**
+
+```powershell
+$s = Read-Host 'GitHub PAT' -AsSecureString
+$b = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
+$p = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($b); [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)
+$read = { param($k) (Get-Content secrets.env | Where-Object { $_ -match "^$k=" } | Select-Object -Last 1) -replace '^[^=]+=', '' -replace '^[''"]|[''"]$', '' }
+$aes = [Security.Cryptography.Aes]::Create()
+$aes.Key = [Text.Encoding]::UTF8.GetBytes((& $read 'TAZAMA_DEVTESTOPS_ENCRYPTION_KEY'))
+$aes.IV = [Text.Encoding]::UTF8.GetBytes((& $read 'TAZAMA_DEVTESTOPS_ENCRYPTION_IV'))
+$pb = [Text.Encoding]::UTF8.GetBytes($p)
+$ct = $aes.CreateEncryptor().TransformFinalBlock($pb, 0, $pb.Length)
+"TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED=$(-join ($ct | ForEach-Object { $_.ToString('x2') }))"
+Remove-Variable s, b, p, pb, ct
+```
+
+Setting `Key` or `IV` fails if the key is not 32 bytes or the IV not 16 bytes.
 
 <div style="text-align: right"><a href="#top">Top</a></div>

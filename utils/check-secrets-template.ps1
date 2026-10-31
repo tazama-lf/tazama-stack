@@ -15,7 +15,7 @@
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $failures = 0
-$sourceOnlyKeys = @('TAZAMA_SFTP_PASSWORD')
+$sourceOnlyKeys = @('TAZAMA_SFTP_PASSWORD', 'TAZAMA_DEVTESTOPS_GITHUB_PAT')
 
 function Write-Finding([string]$title, [string[]]$keys) {
     if ($keys.Count -eq 0) { return }

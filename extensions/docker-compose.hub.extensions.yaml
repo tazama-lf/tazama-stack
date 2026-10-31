@@ -57,7 +57,7 @@ services:
       - .env
     environment:
       - VITE_API_URL=${TRS_API_URL:-http://${SERVER_B_HOST}:${TRS_BACKEND_PORT}}
-      - VITE_SANDBOX_API_URL=${SANDBOX_API_URL:-http://${SERVER_A_HOST}:3050}
+      - VITE_SANDBOX_API_URL=${SANDBOX_API_URL:-http://${SERVER_B_HOST}:${DEVTESTOPS_PORT}}
       - VITE_NATS_API_URL=${NATS_API_URL:-http://${SERVER_A_HOST}:4000}
       - VITE_SIMULATION_ENDPOINT=${SIMULATION_ENDPOINT:-http://${SERVER_A_HOST}:5000/v1/evaluate/iso20022/pacs.002.001.12}
       - VITE_DEMS_ENDPOINT=${DEMS_ENDPOINT:-http://${SERVER_B_HOST}:${DEMS_PORT}}
@@ -66,6 +66,19 @@ services:
     restart: always
     ports:
       - ${TRS_FRONTEND_PORT}:5174
+
+  # Rule repositories and test runs for rule-studio (GitHub). Starts only once
+  # the TAZAMA_DEVTESTOPS_* keys in secrets.env are set (README.md, section 8.5).
+  rule-studio-devtestops:
+    container_name: rule-studio-devtestops
+    image: tazamaorg/rule-studio-devtestops:${TAZAMA_VERSION}
+    env_file:
+      - env/rule-studio-devtestops.env
+    restart: always
+    ports:
+      - ${DEVTESTOPS_PORT}:3050
+    volumes:
+      - ./auth/test-public-key.pem:/auth/test-public-key.pem:ro
 
   case-management-system-backend:
     image: tazamaorg/case-management-system-backend:${TAZAMA_VERSION}
