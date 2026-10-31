@@ -70,7 +70,7 @@ Set-RemoteEnvOverlay -InstanceId $idA -OverlayFile $overlayFile -RemoteEnvFile "
 Write-Host '[Server A] .env overlay applied.' -ForegroundColor Green
 
 # extensions/secrets.env on Server A: DEMS / DEAPI secrets from SSM.
-Set-ServerSecretsEnv -InstanceId $idA -Group 'extensions' -ServerLabel 'Server A'
+Set-ServerSecretsEnv -InstanceId $idA -Group 'extensions' -Server 'A' -ServerLabel 'Server A'
 
 Write-Host '[Server A] Adding DEMS + DEAPI to tazama-core...'
 
@@ -102,9 +102,16 @@ Set-RemoteEnvOverlay -InstanceId $idB -OverlayFile $overlayFile -RemoteEnvFile $
 
 Write-Host '[Server B] .env overlay applied.' -ForegroundColor Green
 
+# extensions/env/rule-studio-devtestops.env: GitHub organisation
+Write-Host '[Server B] Applying rule-studio-devtestops env overlay...'
+Set-RemoteEnvOverlay -InstanceId $idB `
+    -OverlayFile (Join-Path $PSScriptRoot '..\templates\env-rule-studio-devtestops.tpl') `
+    -RemoteEnvFile "$Script:RemoteRepo/extensions/env/rule-studio-devtestops.env"
+Write-Host '[Server B] rule-studio-devtestops env overlay applied.' -ForegroundColor Green
+
 # extensions/secrets.env on Server B: all extensions secrets from SSM
-# (database, CouchDB, SFTP, SMTP, Docker Hub, ...).
-Set-ServerSecretsEnv -InstanceId $idB -Group 'extensions' -ServerLabel 'Server B'
+# (database, CouchDB, SFTP, SMTP, Docker Hub, DevTestOps, ...).
+Set-ServerSecretsEnv -InstanceId $idB -Group 'extensions' -Server 'B' -ServerLabel 'Server B'
 
 # -- 6. Server B: copy auth public key ----------------------------------------
 # TCS and TRS backends require the auth public key (used for JWT verification).

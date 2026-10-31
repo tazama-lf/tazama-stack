@@ -178,7 +178,11 @@ if ($templateKeys.Contains($tokenKey)) {
     $pat = $values['TAZAMA_DEVTESTOPS_GITHUB_PAT']
     $dtoKey = $values['TAZAMA_DEVTESTOPS_ENCRYPTION_KEY']
     $dtoIv = $values['TAZAMA_DEVTESTOPS_ENCRYPTION_IV']
-    if ([string]::IsNullOrEmpty($pat)) {
+    if ([string]::IsNullOrEmpty($pat) -and -not [string]::IsNullOrEmpty($token)) {
+        Write-Host "DevTestOps token check FAILED: $tokenKey is set but TAZAMA_DEVTESTOPS_GITHUB_PAT is empty, so plain docker compose still passes the old token to rule-studio-devtestops. The extensions launcher clears it before the next deployment."
+        $findings++
+    }
+    elseif ([string]::IsNullOrEmpty($pat)) {
         Write-Host 'DevTestOps token check skipped: TAZAMA_DEVTESTOPS_GITHUB_PAT is not set (rule-studio-devtestops does not start).'
     }
     elseif ([string]::IsNullOrEmpty($dtoKey) -or [string]::IsNullOrEmpty($dtoIv)) {

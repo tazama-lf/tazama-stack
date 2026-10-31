@@ -347,11 +347,11 @@ The deploy script patches `SERVER_B_HOST=extensions.tazama.internal` for AWS.
 Every credential is a `TAZAMA_*` key in one `secrets.env` file per component group (`core/`, `extensions/`, `biar/`) - see the root [README.md](../../README.md), section 6. Committed compose and env files only reference `${TAZAMA_*}` keys; no committed file holds a secret value. On AWS, `Set-ServerSecretsEnv` (`helpers.ps1`) renders each server's `secrets.env` from SSM Parameter Store:
 
 - The key list comes from the group's committed `secrets.env.template`. A template key without an SSM mapping in `$Script:SecretsSsmMap` (`helpers.ps1`) stops the deploy.
-- Values are read with batched `aws ssm get-parameters --with-decryption`. A missing or empty parameter for a `[required]` key stops the deploy. The four NiFi keys are `[optional]` in the template (local `NIFI_AUTH=none` needs none of them) but required on AWS, which always runs NiFi in keycloak mode. The same applies to the DevTestOps PAT, key and IV: locally `rule-studio-devtestops` simply does not start without them, but AWS always runs it.
+- Values are read with batched `aws ssm get-parameters --with-decryption`. A missing or empty parameter for a `[required]` key stops the deploy. The four NiFi keys are `[optional]` in the template (local `NIFI_AUTH=none` needs none of them) but required on AWS, which always runs NiFi in keycloak mode. The same applies to the DevTestOps PAT, key and IV: locally `rule-studio-devtestops` simply does not start without them, but AWS always runs it on Server B. Server A runs only DEMS and DEAPI from `extensions/`, so its `extensions/secrets.env` gets the DevTestOps keys empty (no SSM read, `$Script:SecretsServerOnly`).
 - Each value is validated (rules in the table below), written as `KEY='value'` (single-quoted, so `$` stays literal), piped over SSH stdin (never on a command line) and stored with mode 600. No value is printed.
 - `TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED` and `TAZAMA_SFTP_PASSWORD_HASH` have no parameter: they are derived from the SFTP password and the enrichment key, the first in connection-studio's AES-256-CBC format, the second as the SHA-512 crypt hash the `sftp` container receives (so its startup log shows no plain password). Both use a deterministic IV or salt, so they only change when an input changes. The deploy scripts use the same routines as the local extensions launcher (`utils/sftp-derived-secrets.ps1`).
 - `TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED` has no parameter either: it is the DevTestOps GitHub PAT encrypted with the DevTestOps key and IV (AES-256-CBC, lowercase hex), as `rule-studio-devtestops` decrypts it. Same routine as the launcher (`utils/devtestops-derived-secrets.ps1`).
-- The GitHub organisation `rule-studio-devtestops` creates rule repositories in (`GITHUB_ORG_NAME`) is not a secret: `Set-ServerEnvOverlays` applies it to `extensions/env/rule-studio-devtestops.env` on Server B from `infra/aws/templates/env-rule-studio-devtestops.tpl`.
+- The GitHub organisation `rule-studio-devtestops` creates rule repositories in (`GITHUB_ORG_NAME`) is not a secret: `Set-ServerEnvOverlays` and `deploy-extensions.ps1` apply it to `extensions/env/rule-studio-devtestops.env` on Server B from `infra/aws/templates/env-rule-studio-devtestops.tpl`.
 - Every compose command on the servers passes `--env-file .env --env-file secrets.env`.
 
 Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExtensionsOverlay`, `extensions/` for DEMS/DEAPI; B: `extensions/`; C: `biar/`), in `deploy-extensions.ps1` (A and B), and in `restart-service.ps1` / `deploy-service.ps1` before every compose call (dry runs excepted). The server files therefore always match SSM. The former `-Password` parameter of `deploy.ps1`, `deploy-core.ps1` and `deploy-extensions.ps1` is gone.
@@ -388,9 +388,9 @@ Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExten
 | `/tazama/creds/couchdb/cookie-secret` | `TAZAMA_COUCHDB_COOKIE_SECRET` | extensions | yes | Changing it drops CouchDB sessions |
 | `/tazama/creds/dockerhub/username` | `TAZAMA_DOCKERHUB_USERNAME` | extensions | yes | simulation-studio Docker Hub login |
 | `/tazama/creds/dockerhub/token` | `TAZAMA_DOCKERHUB_TOKEN` | extensions | yes | Read-only personal access token |
-| `/tazama/creds/devtestops/github-pat` | `TAZAMA_DEVTESTOPS_GITHUB_PAT` | extensions | yes (AWS) | Fine-grained PAT on the rule-repository organisation (extensions README, section 8.5) |
-| `/tazama/creds/devtestops/encryption-key` | `TAZAMA_DEVTESTOPS_ENCRYPTION_KEY` | extensions | yes (AWS) | Exactly 32 bytes |
-| `/tazama/creds/devtestops/encryption-iv` | `TAZAMA_DEVTESTOPS_ENCRYPTION_IV` | extensions | yes (AWS) | Exactly 16 bytes |
+| `/tazama/creds/devtestops/github-pat` | `TAZAMA_DEVTESTOPS_GITHUB_PAT` | extensions | yes (AWS, Server B) | Fine-grained PAT on the rule-repository organisation (extensions README, section 8.5) |
+| `/tazama/creds/devtestops/encryption-key` | `TAZAMA_DEVTESTOPS_ENCRYPTION_KEY` | extensions | yes (AWS, Server B) | Exactly 32 bytes |
+| `/tazama/creds/devtestops/encryption-iv` | `TAZAMA_DEVTESTOPS_ENCRYPTION_IV` | extensions | yes (AWS, Server B) | Exactly 16 bytes |
 | (derived) | `TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED` | extensions | - | The PAT encrypted with the DevTestOps key and IV |
 | `/tazama/creds/smtp/user` | `TAZAMA_SMTP_USER` | extensions | no | Absent = sending disabled |
 | `/tazama/creds/smtp/password` | `TAZAMA_SMTP_PASS` | extensions | no | |
@@ -1484,7 +1484,8 @@ docker compose --env-file .env --env-file secrets.env -p tazama-core \
 
 3. **Server B** - waits for bootstrap (up to 15 min)
 4. **Server B** - applies `templates/env-extensions.tpl` overlay to `extensions/.env`:
-   sets `SERVER_A_HOST=core.tazama.internal` and `SERVER_B_HOST=extensions.tazama.internal`
+   sets `SERVER_A_HOST=core.tazama.internal` and `SERVER_B_HOST=extensions.tazama.internal`;
+   then applies `templates/env-rule-studio-devtestops.tpl` to `extensions/env/rule-studio-devtestops.env` (`GITHUB_ORG_NAME`)
 5. **Server B** - renders `extensions/secrets.env` from SSM (stops if a required parameter is missing)
 6. **Server B** - SCP `core/auth/test-public-key.pem` → `extensions/auth/`
    (required by TCS/TRS for JWT validation; on single-machine dev the bat
@@ -1769,7 +1770,7 @@ Server B.  Steps:
 2. Pulls latest repo on Server A, renders `extensions/secrets.env` from SSM, then starts DEMS and DEAPI.
 3. Waits for Server B bootstrap.
 4. Pulls latest repo on Server B.
-5. Copies `extensions/.env` to Server B and applies the same `env-extensions.tpl` overlay.
+5. Copies `extensions/.env` to Server B and applies the same `env-extensions.tpl` overlay, then the `env-rule-studio-devtestops.tpl` overlay (`GITHUB_ORG_NAME`).
 6. Renders `extensions/secrets.env` on Server B from SSM.
 7. Copies `core/auth/test-public-key.pem` to Server B (required by TCS/TRS for JWT verification).
 8. Starts the extensions stack (OpenSearch, CMS, TCS, TRS, pgAdmin).

@@ -395,6 +395,8 @@ function Set-BiarServiceEnvOverlay {
 # TAZAMA_DEVTESTOPS_GITHUB_TOKEN_ENCRYPTED is derived from the DevTestOps PAT,
 # key and IV (see Get-DevTestOpsTokenCiphertext in
 # utils/devtestops-derived-secrets.ps1).
+# With -Server, keys in $Script:SecretsServerOnly that belong to another
+# server are written empty: no SSM read, not required, nothing derived.
 # The content is piped over ssh stdin (no secret on any command line) and
 # written with mode 600. No value is ever printed.
 $Script:SecretsSsmMap = [ordered]@{
@@ -447,6 +449,13 @@ $Script:SecretsAwsRequired = @(
     'TAZAMA_DEVTESTOPS_ENCRYPTION_KEY'
     'TAZAMA_DEVTESTOPS_ENCRYPTION_IV'
 )
+# Keys only one server uses. rule-studio-devtestops runs on Server B; Server A
+# renders extensions/secrets.env only for DEMS / DEAPI.
+$Script:SecretsServerOnly = @{
+    TAZAMA_DEVTESTOPS_GITHUB_PAT     = 'B'
+    TAZAMA_DEVTESTOPS_ENCRYPTION_KEY = 'B'
+    TAZAMA_DEVTESTOPS_ENCRYPTION_IV  = 'B'
+}
 $Script:SecretsUrlKeys = @(
     'TAZAMA_CORE_PG_PASSWORD'
     'TAZAMA_EXT_PG_PASSWORD'
@@ -467,6 +476,7 @@ function Set-ServerSecretsEnv {
     param(
         [Parameter(Mandatory)][string]$InstanceId,
         [Parameter(Mandatory)][ValidateSet('core', 'extensions', 'biar')][string]$Group,
+        [ValidateSet('A', 'B', 'C')][string]$Server,
         [string]$ServerLabel = 'server'
     )
 
@@ -489,8 +499,13 @@ function Set-ServerSecretsEnv {
         throw "[$ServerLabel] $Group/secrets.env.template has keys without an SSM mapping in helpers.ps1 (`$Script:SecretsSsmMap): $($unmapped -join ', ')"
     }
 
+    $otherServer = @($keys.Keys | Where-Object {
+        $Server -and $Script:SecretsServerOnly.ContainsKey($_) -and $Script:SecretsServerOnly[$_] -ne $Server
+    })
+
     # Batched SSM read (get-parameters takes at most 10 names per call).
-    $names = @($keys.Keys | ForEach-Object { $Script:SecretsSsmMap[$_] } | Where-Object { $_ } | Sort-Object -Unique)
+    $names = @($keys.Keys | Where-Object { $otherServer -notcontains $_ } |
+        ForEach-Object { $Script:SecretsSsmMap[$_] } | Where-Object { $_ } | Sort-Object -Unique)
     $ssm = @{}
     for ($i = 0; $i -lt $names.Count; $i += 10) {
         $batch = $names[$i..([Math]::Min($i + 9, $names.Count - 1))]
@@ -503,6 +518,7 @@ function Set-ServerSecretsEnv {
     $values = [ordered]@{}
     $absentOptional = @()
     foreach ($key in $keys.Keys) {
+        if ($otherServer -contains $key) { $values[$key] = ''; continue }
         $name = $Script:SecretsSsmMap[$key]
         if (-not $name) { continue }   # derived below
         $v = if ($ssm.ContainsKey($name)) { $ssm[$name] } else { '' }
@@ -525,6 +541,9 @@ function Set-ServerSecretsEnv {
     }
     if ($absentOptional) {
         Write-Host "[$ServerLabel] Optional secrets not in SSM (rendered empty): $($absentOptional -join ', ')"
+    }
+    if ($otherServer) {
+        Write-Host "[$ServerLabel] Secrets of another server (rendered empty): $($otherServer -join ', ')"
     }
     if ($keys.Contains('TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED')) {
         $values['TAZAMA_TCS_SFTP_PASSWORD_ENCRYPTED'] = Get-TcsSftpCiphertext `
@@ -602,11 +621,11 @@ function Set-ServerEnvOverlays {
 
     switch ($Server) {
         'A' {
-            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'core' -ServerLabel $label
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'core' -Server $Server -ServerLabel $label
 
             if (-not $SkipExtensionsOverlay) {
                 # DEMS / DEAPI run from extensions/ on Server A
-                Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
+                Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -Server $Server -ServerLabel $label
 
                 # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
                 Write-Host "[$label] Re-applying extensions .env overlay..."
@@ -641,7 +660,7 @@ function Set-ServerEnvOverlays {
             Set-NifiOidcOverlay -InstanceId $InstanceId -NifiPublicUrl $TofuOutputs.NifiPublicUrl -ServerLabel $label
         }
         'B' {
-            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -Server $Server -ServerLabel $label
 
             # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
             Write-Host "[$label] Re-applying extensions .env overlay..."
@@ -656,7 +675,7 @@ function Set-ServerEnvOverlays {
                 -RemoteEnvFile "$Script:RemoteRepo/extensions/env/rule-studio-devtestops.env"
         }
         'C' {
-            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'biar' -ServerLabel $label
+            Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'biar' -Server $Server -ServerLabel $label
 
             # biar/.env: SERVER_A/B/C_HOST, S3A_ENDPOINT
             Write-Host "[$label] Re-applying biar .env overlay..."

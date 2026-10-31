@@ -206,7 +206,10 @@ if in_template "$token_key"; then
     lookup_secret TAZAMA_DEVTESTOPS_ENCRYPTION_IV; dto_iv="$found_value"
     dto_key_hex=$(printf '%s' "$dto_key" | od -An -v -tx1 | tr -d ' \n')
     dto_iv_hex=$(printf '%s' "$dto_iv" | od -An -v -tx1 | tr -d ' \n')
-    if [[ -z "$pat" ]]; then
+    if [[ -z "$pat" && -n "$token" ]]; then
+        echo "DevTestOps token check FAILED: $token_key is set but TAZAMA_DEVTESTOPS_GITHUB_PAT is empty, so plain docker compose still passes the old token to rule-studio-devtestops. The extensions launcher clears it before the next deployment."
+        findings=$((findings + 1))
+    elif [[ -z "$pat" ]]; then
         echo "DevTestOps token check skipped: TAZAMA_DEVTESTOPS_GITHUB_PAT is not set (rule-studio-devtestops does not start)."
     elif [[ -z "$dto_key" || -z "$dto_iv" ]]; then
         echo "DevTestOps token check FAILED: TAZAMA_DEVTESTOPS_ENCRYPTION_KEY and TAZAMA_DEVTESTOPS_ENCRYPTION_IV must be set when TAZAMA_DEVTESTOPS_GITHUB_PAT is."
