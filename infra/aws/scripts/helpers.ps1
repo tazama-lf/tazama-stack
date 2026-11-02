@@ -13,6 +13,7 @@
       - Set-RemoteEnvOverlay - apply KEY=VALUE overlay to a remote .env file
       - Set-ServerSecretsEnv - render a component group's secrets.env from SSM
       - Set-DemoUiOverlay    - apply the tazama-demo public URL
+      - Set-PgAdminServerModeOverlay - require a pgAdmin login (server mode) on AWS
       - Set-JupyterHubOidcOverlay - apply the JupyterHub public URL for the Keycloak realm import
       - Set-NifiOidcOverlay  - apply the NiFi public URL for the Keycloak realm import
       - Set-NifiAuthOverlay  - switch biar-nifi to keycloak mode (Server C)
@@ -209,6 +210,25 @@ function Set-RemoteEnvOverlay {
     $newlineGuard = "if [ -s ${RemoteEnvFile} ] && [ -n `"`$(tail -c1 ${RemoteEnvFile})`" ]; then echo >> ${RemoteEnvFile}; fi"
     $batchCmd = (@($newlineGuard) + $bashLines) -join '; '
     Invoke-RemoteCommand $InstanceId $batchCmd
+}
+
+# -- Set-PgAdminServerModeOverlay ---------------------------------------------
+# pgAdmin is published through the internet-facing ALB, so on AWS it must run
+# in server mode (login required). The committed env files keep desktop mode
+# (no login), the right default for local development. A 'git reset --hard'
+# restores that default, so every deploy path that resets a checkout calls this
+# afterwards. $Group is 'core' (Server A) or 'extensions' (Server B).
+function Set-PgAdminServerModeOverlay {
+    param(
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][ValidateSet('core', 'extensions')][string]$Group,
+        [string]$ServerLabel = 'Server'
+    )
+
+    Write-Host "[$ServerLabel] Requiring a pgAdmin login ($Group-pgadmin.env)..."
+    Set-RemoteEnvOverlay -InstanceId $InstanceId `
+        -OverlayContent "PGADMIN_CONFIG_SERVER_MODE='True'" `
+        -RemoteEnvFile "$Script:RemoteRepo/$Group/env/$Group-pgadmin.env"
 }
 
 # -- Set-DemoUiOverlay --------------------------------------------------------
@@ -594,10 +614,12 @@ function Set-ServerSecretsEnv {
 #              -SkipExtensionsOverlay; KEYCLOAK_HOSTNAME in core/.env; strips
 #              KC_HOSTNAME_PORT from keycloak.env; the tazama-demo,
 #              JupyterHub and NiFi public URLs (see Set-DemoUiOverlay,
-#              Set-JupyterHubOidcOverlay, Set-NifiOidcOverlay).
+#              Set-JupyterHubOidcOverlay, Set-NifiOidcOverlay); pgAdmin
+#              server mode in core/env/core-pgadmin.env.
 #   Server B : extensions/secrets.env; extensions/.env overlay;
 #              extensions/env/rule-studio-devtestops.env overlay (GitHub
-#              organisation).
+#              organisation); pgAdmin server mode in
+#              extensions/env/extensions-pgadmin.env.
 #   Server C : biar/secrets.env; biar/.env overlay (host names, S3A_ENDPOINT);
 #              NiFi keycloak mode (see Set-NifiAuthOverlay - throws when the
 #              custom domain is missing); public Keycloak / JupyterHub URLs in
@@ -622,6 +644,7 @@ function Set-ServerEnvOverlays {
     switch ($Server) {
         'A' {
             Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'core' -Server $Server -ServerLabel $label
+            Set-PgAdminServerModeOverlay -InstanceId $InstanceId -Group 'core' -ServerLabel $label
 
             if (-not $SkipExtensionsOverlay) {
                 # DEMS / DEAPI run from extensions/ on Server A
@@ -661,6 +684,7 @@ function Set-ServerEnvOverlays {
         }
         'B' {
             Set-ServerSecretsEnv -InstanceId $InstanceId -Group 'extensions' -Server $Server -ServerLabel $label
+            Set-PgAdminServerModeOverlay -InstanceId $InstanceId -Group 'extensions' -ServerLabel $label
 
             # extensions/.env: SERVER_A/B/C_HOST, public API URLs, CORS origins
             Write-Host "[$label] Re-applying extensions .env overlay..."

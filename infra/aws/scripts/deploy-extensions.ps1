@@ -69,6 +69,9 @@ Write-Host '[Server A] Applying .env overlay to extensions/.env...'
 Set-RemoteEnvOverlay -InstanceId $idA -OverlayFile $overlayFile -RemoteEnvFile "$Script:RemoteRepo/extensions/.env"
 Write-Host '[Server A] .env overlay applied.' -ForegroundColor Green
 
+# The reset above also restores core/env/core-pgadmin.env to desktop mode (no login).
+Set-PgAdminServerModeOverlay -InstanceId $idA -Group 'core' -ServerLabel 'Server A'
+
 # extensions/secrets.env on Server A: DEMS / DEAPI secrets from SSM.
 Set-ServerSecretsEnv -InstanceId $idA -Group 'extensions' -Server 'A' -ServerLabel 'Server A'
 
@@ -108,6 +111,9 @@ Set-RemoteEnvOverlay -InstanceId $idB `
     -OverlayFile (Join-Path $PSScriptRoot '..\templates\env-rule-studio-devtestops.tpl') `
     -RemoteEnvFile "$Script:RemoteRepo/extensions/env/rule-studio-devtestops.env"
 Write-Host '[Server B] rule-studio-devtestops env overlay applied.' -ForegroundColor Green
+
+# pgAdmin is published through the ALB: it must keep requiring a login after the reset.
+Set-PgAdminServerModeOverlay -InstanceId $idB -Group 'extensions' -ServerLabel 'Server B'
 
 # extensions/secrets.env on Server B: all extensions secrets from SSM
 # (database, CouchDB, SFTP, SMTP, Docker Hub, DevTestOps, ...).
