@@ -45,6 +45,7 @@ locals {
     voila        = { port = 18866, server = "b" }
     pgadmin-ext  = { port = 5051,  server = "b" }
     couchdb      = { port = 5984,  server = "b" }
+    devtestops   = { port = 3050,  server = "b" }
     nifi                    = { port = 8443, server = "c" }
     jupyterhub              = { port = 8000, server = "c" }
     auto-orchestrator       = { port = 7619, server = "c" }
@@ -71,6 +72,7 @@ locals {
     tcs-api     = "/api/docs"
     voila       = "/voila/"
     couchdb     = "/"
+    devtestops  = "/api/health"
     # tazama-demo (Next.js) exposes a cheap, dependency-free liveness route.
     demo        = "/api/health"
   }
@@ -86,6 +88,11 @@ locals {
   # NiFi in keycloak mode refuses plain HTTP and requires an authenticated
   # login, so a public port listener would be both broken and pointless.
   tls_backends = ["nifi"]
+
+  # Services reachable only through the 443 host rule: no plain-HTTP port
+  # listener. DevTestOps fronts an organisation-scoped GitHub token, so it must
+  # not be offered over cleartext HTTP.
+  host_only = ["devtestops"]
 }
 
 resource "aws_lb_target_group" "services" {
@@ -133,10 +140,11 @@ resource "aws_lb_target_group_attachment" "services" {
 # Each service is reachable at http://<alb-dns>:<port>
 # No host-based or path-based rules are needed — there is exactly one target
 # group per listener, so the default action covers 100% of traffic.
-# TLS backends (local.tls_backends) are excluded: reachable via 443 host rule only.
+# TLS backends (local.tls_backends) and host-only services (local.host_only) are
+# excluded: reachable via 443 host rule only.
 
 resource "aws_lb_listener" "services" {
-  for_each = { for k, v in local.services : k => v if !contains(local.tls_backends, k) }
+  for_each = { for k, v in local.services : k => v if !contains(local.tls_backends, k) && !contains(local.host_only, k) }
 
   load_balancer_arn = aws_lb.main.arn
   port              = each.value.port

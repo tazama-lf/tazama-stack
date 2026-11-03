@@ -1229,6 +1229,7 @@ Files created:
 | `ALLOWED_ORIGINS` / `CORS_ORIGINS` | localhost | Public ALB subdomains | CORS |
 | `VOILA_URL` | `http://case-management-system-voila:8866` (container-internal) | `https://voila.beta.tazama.org` | Prevents mixed-content block when CMS frontend embeds the Voila iframe over HTTPS |
 | `CMS_FRONTEND_ORIGIN` | `http://localhost:5175` | `https://cms.beta.tazama.org` | Sets the Voila `frame-ancestors` CSP to allow the CMS frontend to embed the iframe (requires CMS image with env-var-driven CSP support - see [case-management-system #92](https://github.com/tazama-lf/case-management-system/issues/92)) |
+| `SANDBOX_API_URL` | not set (hub compose falls back to `http://${SERVER_B_HOST}:3050`) | `https://devtestops.beta.tazama.org` | The rule-studio frontend calls DevTestOps from the browser, so it needs a public HTTPS URL (mixed-content block otherwise) |
 | `GOLD_LAKEHOUSE_API_URL` | `http://${SERVER_C_HOST}:8282` (placeholder, resolves to dev default at runtime) | `SERVER_C_HOST=biar.tazama.internal` set by this overlay | Server C datalakehouse-api |
 
 ---
@@ -2735,6 +2736,7 @@ Then redeploy extensions:
 | `cms.<your-zone>` | CMS Frontend | Server B :5175 |
 | `cms-api.<your-zone>` | CMS Backend API | Server B :3090 |
 | `pgadmin-ext.<your-zone>` | pgAdmin (extensions DB) | Server B :5051 |
+| `devtestops.<your-zone>` | Rule Studio DevTestOps API (HTTPS host rule only, no port-based HTTP listener) | Server B :3050 |
 | `nifi.<your-zone>` | NiFi UI (Keycloak login) | Server C :8443 (HTTPS) |
 | `jupyter.<your-zone>` | JupyterHub (multi-user analytics) | Server C :8000 |
 | `datalakehouse-api.<your-zone>` | Datalakehouse API | Server C :8282 |
@@ -3591,6 +3593,7 @@ docker compose --env-file .env --env-file secrets.env -p tazama-core \
 | 5174 | TRS Frontend | ALB | `trs` |
 | 5175 | CMS Frontend | ALB | `cms` |
 | 18866 | Voila notebook server | ALB | `voila` |
+| 3050 | Rule Studio DevTestOps | ALB (443 host rule only) | `devtestops` |
 | 5984 | CouchDB | ALB | `couchdb` |
 | 9200 | OpenSearch | (NiFi ETL - pending confirmation) | - |
 | 12222 | SFTP | File ingest | - |

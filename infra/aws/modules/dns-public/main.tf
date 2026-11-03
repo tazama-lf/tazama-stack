@@ -95,6 +95,7 @@ locals {
     batch-ppa               = var.target_group_arns["batch-ppa"]
     couchdb                 = var.target_group_arns["couchdb"]
     demo                    = var.target_group_arns["demo"]
+    devtestops              = var.target_group_arns["devtestops"]
   }
 
   # Explicit priorities — must match the actual AWS state exactly.
@@ -124,6 +125,7 @@ locals {
     batch-ppa               = 23
     couchdb                 = 24
     demo                    = 25
+    devtestops              = 26
   }
 }
 
