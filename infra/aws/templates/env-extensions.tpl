@@ -17,8 +17,9 @@ SERVER_C_HOST=biar.tazama.internal
 ADMIN_SERVICE_URL=http://core.tazama.internal:5100
 
 # Public URLs for browser-facing VITE_ variables
-# (SANDBOX_API_URL, NATS_API_URL, DEMS_ENDPOINT still use private-DNS fallbacks
+# (NATS_API_URL, DEMS_ENDPOINT still use private-DNS fallbacks
 #  until additional ALB entries are added)
+SANDBOX_API_URL=https://devtestops.beta.tazama.org
 TRS_API_URL=https://trs-api.beta.tazama.org
 TCS_API_URL=https://tcs-api.beta.tazama.org
 CMS_API_URL=https://cms-api.beta.tazama.org
