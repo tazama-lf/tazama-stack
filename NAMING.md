@@ -96,7 +96,7 @@ Deleted: `rs-nats-tp.env` and `rs-nats-ea.env` - superseded by the shared `relay
 | case-management-system-backend | `cms-backend` | tazama-cms-backend | |
 | case-management-system-frontend | `cms-frontend` | tazama-cms-frontend | |
 | case-management-system-voila | `voila` | tazama-cms-voila | |
-| case-management-system-migrate | `migrate` | cms-migrations | |
+| case-management-system-migrate | `migrate` | cms-migrations | Removed. CMS bootstrap is `extensions/postgres/migration/01-cms-init.sql`, run by `extensions-postgres` on an empty volume |
 | event-monitoring-service | `dems` | tazama-dems-1 | fake `-1` removed; deploys under `-p tazama-core` from extensions/ |
 | data-enrichment-service | `deapi` | tazama-deapi-1 | fake `-1` removed; deploys under `-p tazama-core` from extensions/ |
 | extensions-postgres | `postgres` | tazama-extensions-postgres-1 | stack prefix per rule 5; volume key `postgres_data` unchanged |
