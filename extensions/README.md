@@ -235,13 +235,12 @@ These infrastructure services are started as part of the `tazama-extensions` Com
 
 | Service | Container | Port | Description |
 |---|---|---|---|
-| PostgreSQL | `extensions-postgres` | 15433 | Dedicated PostgreSQL instance for CMS and extensions services |
+| PostgreSQL | `extensions-postgres` | 15433 | Dedicated PostgreSQL instance for CMS and extensions services. A fresh volume runs `postgres/migration/01-cms-init.sql`, which creates `tazama_cms` (schema and the `TAZAMA` demo seed) and an empty `flowable` database |
 | SFTP | `sftp` | 12222 | SFTP server for transaction file uploads (used by TCS) |
 | CouchDB | `couchdb` | 5984 | Document database for CMS audit and case data |
 | Flowable | `flowable` | 8081 | Workflow engine for CMS case lifecycle management |
 | OpenSearch | `opensearch` | 9200 | Audit log store for TCS, TRS, and CMS (forensic audit trail) |
 | OpenSearch init | `opensearch-init` | -- | One-shot container: applies audit index template (30s refresh, async translog, 0 replicas) on first start |
-| DB Migration | `case-management-system-migrate` | -- | One-shot container: applies CMS schema to PostgreSQL on startup |
 | pgAdmin | `extensions-pgadmin` | 5051 | Optional PostgreSQL web UI (included if pgAdmin is selected) |
 
 > [!NOTE]
@@ -306,7 +305,7 @@ copy ..\core\auth\test-public-key.pem .\auth\test-public-key.pem
 
 ### CMS backend fails to start
 
-The CMS backend depends on `case-management-system-migrate`, `flowable`, and `opensearch`. OpenSearch takes up to 60 seconds to become healthy on a cold start. If the CMS backend exits immediately, wait for OpenSearch to finish initialising and then re-run the compose command, or restart the container:
+The CMS backend depends on `extensions-postgres`, `flowable`, and `opensearch`. OpenSearch takes up to 60 seconds to become healthy on a cold start. If the CMS backend exits immediately, wait for OpenSearch to finish initialising and then re-run the compose command, or restart the container:
 
 ```
 docker restart case-management-system-backend
