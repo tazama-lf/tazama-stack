@@ -88,9 +88,12 @@ services:
     container_name: case-management-system-backend
     restart: unless-stopped
     depends_on:
-      - case-management-system-migrate
-      - flowable
-      - opensearch
+      extensions-postgres:
+        condition: service_healthy
+      flowable:
+        condition: service_started
+      opensearch:
+        condition: service_started
     env_file:
       - ./env/case-management-system.env
       - .env

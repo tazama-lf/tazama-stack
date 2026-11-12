@@ -8,6 +8,7 @@ services:
     command: postgres -N 1000 -c shared_buffers=512MB -c effective_cache_size=2GB
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./postgres/migration/01-cms-init.sql:/docker-entrypoint-initdb.d/01-cms-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -44,24 +45,13 @@ services:
       - couchdb_data:/opt/couchdb/data
       - ./couchdb/migration/local.ini:/opt/couchdb/etc/local.d/local.ini
 
-  case-management-system-migrate:
-    image: tazamaorg/case-management-system-migrate:${TAZAMA_VERSION}
-    container_name: case-management-system-migrate
-    depends_on:
-      extensions-postgres:
-        condition: service_healthy
-    env_file:
-      - .env
-      - ./env/case-management-system.env
-    command: sh /home/app/migrate.sh
-    restart: "no"
-
   flowable:
     image: flowable/flowable-rest:latest
     container_name: flowable
     restart: unless-stopped
     depends_on:
-      - case-management-system-migrate
+      extensions-postgres:
+        condition: service_healthy
     env_file:
       - ./env/case-management-system.env
     environment:
