@@ -174,6 +174,14 @@ apply_configuration() {
     echo ""
 
     if [[ "$confirm" == "e" || "$confirm" == "E" ]]; then
+        # Prepare TLS before any existing containers are stopped.
+        if ! NATS_TLS_UID="$(id -u)" NATS_TLS_GID="$(id -g)" \
+            docker compose --env-file .env --env-file secrets.env \
+            -f docker-compose.nats-tls-init.yaml -p tazama-core-tls \
+            run --rm --no-deps nats-tls-init; then
+            print_color $RED "NATS TLS setup failed; existing containers were not stopped."
+            return 1
+        fi
         print_color $GREEN "Stopping existing Tazama containers..."
         echo ""
         docker compose -p tazama-biar down --volumes --remove-orphans 2>/dev/null || true

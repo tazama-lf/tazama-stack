@@ -1,0 +1,30 @@
+# One-shot TLS preflight, called by both core launchers before stopping services.
+services:
+  nats-tls-init:
+    image: alpine/openssl:3.5.9
+    entrypoint: ["/bin/sh", "/scripts/prepare-tls.sh"]
+    command: ["/certs"]
+    network_mode: none
+    environment:
+      NATS_AUTHENTICATED: ${NATS_AUTHENTICATED:-false}
+      NATS_CERTIFICATE_AUTHORITY_PATH: ${NATS_CERTIFICATE_AUTHORITY_PATH:-/etc/nats/client/ca.crt}
+      NATS_CLIENT_CERT_PATH: ${NATS_CLIENT_CERT_PATH:-/etc/nats/client/client.crt}
+      NATS_CLIENT_KEY_PATH: ${NATS_CLIENT_KEY_PATH:-/etc/nats/client/client.key}
+      NATS_TLS_UID: ${NATS_TLS_UID:-}
+      NATS_TLS_GID: ${NATS_TLS_GID:-}
+    volumes:
+      - type: bind
+        source: ./nats/prepare-tls.sh
+        target: /scripts/prepare-tls.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./nats/generate-certs.sh
+        target: /scripts/generate-certs.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NATS_CERTS_DIR:-./nats/certs}
+        target: /certs

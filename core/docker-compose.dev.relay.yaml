@@ -1,3 +1,18 @@
+# Source and destination client credentials for TLS-enabled NATS brokers.
+x-nats-client-volumes: &nats-client-volumes
+  - type: bind
+    source: ${NATS_CERTS_DIR:-./nats/certs}/client
+    target: /etc/nats/client
+    read_only: true
+    bind:
+      create_host_path: false
+  - type: bind
+    source: ${DESTINATION_NATS_CERTS_DIR:-${NATS_CERTS_DIR:-./nats/certs}/client}
+    target: /etc/nats/destination
+    read_only: true
+    bind:
+      create_host_path: false
+
 services:
   event-flow:
     environment:
@@ -29,6 +44,13 @@ services:
     env_file:
       - env/relay-service-nats.env
       - .env
+    volumes: *nats-client-volumes
+    secrets:
+      - GH_TOKEN
+    command:
+      - /bin/sh
+      - -ec
+      - 'export GH_TOKEN="$$(cat /run/secrets/GH_TOKEN)"; exec npm start'
     restart: always
     environment:
       FUNCTION_NAME: relay-service-ef
@@ -49,6 +71,13 @@ services:
     env_file:
       - env/relay-service-nats.env
       - .env
+    volumes: *nats-client-volumes
+    secrets:
+      - GH_TOKEN
+    command:
+      - /bin/sh
+      - -ec
+      - 'export GH_TOKEN="$$(cat /run/secrets/GH_TOKEN)"; exec npm start'
     restart: always
     environment:
       FUNCTION_NAME: relay-service-tp
@@ -69,6 +98,13 @@ services:
     env_file:
       - env/relay-service-nats.env
       - .env
+    volumes: *nats-client-volumes
+    secrets:
+      - GH_TOKEN
+    command:
+      - /bin/sh
+      - -ec
+      - 'export GH_TOKEN="$$(cat /run/secrets/GH_TOKEN)"; exec npm start'
     restart: always
     environment:
       FUNCTION_NAME: relay-service-ea
@@ -77,3 +113,7 @@ services:
       APM_SERVICE_NAME: relay-service-ea
     depends_on:
       - event-adjudicator
+
+secrets:
+  GH_TOKEN:
+    environment: GH_TOKEN

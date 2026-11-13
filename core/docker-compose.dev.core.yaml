@@ -1,3 +1,12 @@
+# Shared client credentials; the CA signing key and server key stay off application containers.
+x-nats-client-volumes: &nats-client-volumes
+  - type: bind
+    source: ${NATS_CERTS_DIR:-./nats/certs}/client
+    target: /etc/nats/client
+    read_only: true
+    bind:
+      create_host_path: false
+
 # base
 
 include:
@@ -40,6 +49,7 @@ services:
     env_file:
       - env/tms-service.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     ports:
       - ${TMS_PORT}:3000
@@ -64,6 +74,7 @@ services:
     env_file:
       - env/event-director.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     depends_on:
       valkey:
@@ -86,6 +97,7 @@ services:
     env_file:
       - env/rule-901.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     depends_on:
       valkey:
@@ -108,6 +120,7 @@ services:
     env_file:
       - env/typology-processor.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     depends_on:
       valkey:
@@ -130,6 +143,7 @@ services:
     env_file:
       - env/event-adjudicator.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     depends_on:
       valkey:
@@ -152,6 +166,7 @@ services:
     env_file:
       - env/event-flow.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     depends_on:
       core-postgres:

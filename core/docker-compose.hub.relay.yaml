@@ -1,3 +1,18 @@
+# Source and destination client credentials for TLS-enabled NATS brokers.
+x-nats-client-volumes: &nats-client-volumes
+  - type: bind
+    source: ${NATS_CERTS_DIR:-./nats/certs}/client
+    target: /etc/nats/client
+    read_only: true
+    bind:
+      create_host_path: false
+  - type: bind
+    source: ${DESTINATION_NATS_CERTS_DIR:-${NATS_CERTS_DIR:-./nats/certs}/client}
+    target: /etc/nats/destination
+    read_only: true
+    bind:
+      create_host_path: false
+
 services:
   event-flow:
     environment:
@@ -24,6 +39,7 @@ services:
     env_file:
       - env/relay-service-nats.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     environment:
       FUNCTION_NAME: relay-service-ef
@@ -39,6 +55,7 @@ services:
     env_file:
       - env/relay-service-nats.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     environment:
       FUNCTION_NAME: relay-service-tp
@@ -54,6 +71,7 @@ services:
     env_file:
       - env/relay-service-nats.env
       - .env
+    volumes: *nats-client-volumes
     restart: always
     environment:
       FUNCTION_NAME: relay-service-ea

@@ -43,4 +43,17 @@ services:
     container_name: nats
     image: nats:2
     restart: always
-    command: ["-DVV"]
+    command: ["-c", "/etc/nats/nats.conf", "-DVV"]
+    volumes:
+      - type: bind
+        source: ./nats/nats.conf
+        target: /etc/nats/nats.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NATS_CERTS_DIR:-./nats/certs}/server
+        target: /etc/nats/server
+        read_only: true
+        bind:
+          create_host_path: false
