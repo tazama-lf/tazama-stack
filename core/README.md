@@ -101,6 +101,34 @@ C:\Tazama\GitHub>
 
 First, create `core/secrets.env`: copy `core/secrets.env.template` to `core/secrets.env` and fill in every `[required]` key. For a local machine you can use the public test values in [Original default values](#original-default-values). The launcher stops if `secrets.env` is missing, and Docker Compose stops if a required key is empty. See [section 6 of the repository README](../README.md#6-secrets) for the rules.
 
+### Local NATS TLS certificates
+
+`core/.env` is the shared location for `NATS_AUTHENTICATED` and the three `NATS_*_PATH` variables. The core services and rule executors load it after their service-specific env files. These certificate paths refer to files **inside the containers**, not paths on your host.
+
+Use `core/tazama-core.sh` on Unix or `core/tazama-core.bat` on Windows as usual. After you confirm a deployment, both launchers validate Compose and run the same one-shot TLS preparation container **before stopping any existing services**. No separate certificate-generation command or host OpenSSL installation is required; Docker pulls the small `alpine/openssl:3.5.9` helper image when needed.
+
+On the first run, an absent or empty `NATS_CERTS_DIR` is populated with local credentials. The default directory, `core/nats/certs/`, is gitignored. Subsequent runs reuse existing certificates and verify their expiry, trust, matching private keys, and coverage of the Docker hostname `nats`. Missing or invalid credentials stop deployment without overwriting files or stopping running services. To rotate certificates, select a new empty `NATS_CERTS_DIR` and redeploy, or supply a complete valid certificate set.
+
+Generated certificates are valid for 30 days and cover `nats`, `localhost`, and `127.0.0.1`. Certificates generated earlier for only `localhost` need to be reissued to include `nats`. The shell launcher restores ownership of newly generated files to the host user.
+
+The shared settings in `core/.env` are:
+
+```dotenv
+NATS_CERTS_DIR=./nats/certs
+NATS_AUTHENTICATED=true
+NATS_CERTIFICATE_AUTHORITY_PATH=/etc/nats/client/ca.crt
+NATS_CLIENT_CERT_PATH=/etc/nats/client/client.crt
+NATS_CLIENT_KEY_PATH=/etc/nats/client/client.key
+```
+
+`NATS_CERTS_DIR` is the host certificate directory, relative to `core/` unless absolute. Set it in `core/.env` to choose another directory; both launchers resolve it through Docker Compose. For manual certificate generation with host OpenSSL, `sh core/nats/generate-certs.sh /absolute/path` remains available.
+
+NATS loads `core/nats/nats.conf` and requires a client certificate signed by the generated CA. TMS, event director, all rule executors, typology processor, event adjudicator, event flow, enabled relays, and NATS utilities mount only the `client/` directory read-only. Only NATS mounts `server/`. The one-shot TLS helper accesses the complete certificate directory; application and broker containers never mount the CA signing key. The generator keeps the host parent directory private while allowing non-root containers to read the keys in their mounted subdirectory.
+
+Keep `NATS_AUTHENTICATED=true` while using this server configuration. TLS verification stays enabled; `NODE_TLS_REJECT_UNAUTHORIZED=0` is unnecessary. Existing service env files already use `SERVER_URL=nats:4222`. A client running on the host should use `localhost:14222` and the host paths under `core/nats/certs/client/` instead.
+
+Use service images/builds containing the startup library's TLS support. Optional clients using separate NATS integrations, such as the demo's broker status connection and logging services, need their own compatible TLS configuration before enabling those features against this server. Relays have a separate destination client mount; it defaults to the core client credentials for local NATS-to-NATS delivery (see [Relay Services (NATS)](#relay-services-nats)).
+
 Then start the Docker Desktop for Windows application.
 
 With Docker Desktop running: from your Windows Command prompt and from inside the `tazama-stack` folder, execute the following command and follow the prompts:
@@ -245,6 +273,23 @@ This option deploys the Tazama results relay services on top of the selected dep
  - a relay service for Event Adjudicator egress to facilitate the propagation of investigation alerts
 
 Only NATS-to-NATS relay services are accommodated in the Tazama full-stack deployment, although other relay services are available for NATS-to-REST, NATS-to-Kafka, and NATS-to-RabbitMQ.
+
+Both relay connections use mutual TLS by default. The source connection uses the shared `NATS_AUTHENTICATED` and `NATS_*_PATH` settings in `core/.env` and the read-only `/etc/nats/client` mount. The destination connection uses `DESTINATION_NATS_AUTHENTICATED` and the three `DESTINATION_NATS_*_PATH` settings defined in `env/relay-service-nats.env`. Its read-only `/etc/nats/destination` mount defaults to `${NATS_CERTS_DIR}/client`, so local relays can publish back to `nats:4222` using the generated credentials.
+
+For an external destination broker, add these overrides to `core/.env`:
+
+```dotenv
+DESTINATION_TRANSPORT_URL=tls://destination-nats.example.com:4222
+DESTINATION_NATS_AUTHENTICATED=true
+DESTINATION_NATS_CERTS_DIR=/absolute/path/to/destination-client-certs
+DESTINATION_NATS_CERTIFICATE_AUTHORITY_PATH=/etc/nats/destination/ca.crt
+DESTINATION_NATS_CLIENT_CERT_PATH=/etc/nats/destination/client.crt
+DESTINATION_NATS_CLIENT_KEY_PATH=/etc/nats/destination/client.key
+```
+
+`DESTINATION_NATS_CERTS_DIR` is a host directory containing the destination CA certificate and client certificate/key; relative paths resolve from `core/`. The three certificate paths refer to files inside the container. Adjust the filenames if your credentials use names such as `ca.pem`, `client-cert.pem`, and `client-key.pem`. The directory must already exist. Supply credentials trusted by the destination broker and a server certificate covering its hostname; the core TLS preflight validates only the core broker credentials. These settings and mounts apply to development, DockerHub, and all multi-tenant relays. Redeploy the relays after changing them, using builds/images containing TLS support for both the startup library and the NATS relay plugin.
+
+The shared relay environment pins `DESTINATION_TRANSPORT_TYPE` to `@tazama-lf/nats-relay-plugin@4.1.0-rc.0`, which supports the destination TLS variables. Override `DESTINATION_TRANSPORT_TYPE` in `core/.env` to select another compatible release. The relay wrapper must support versioned plugin specifications.
 
 Most deployment test collections rely on the deployment of the  relay-services and the NATS-utilities to intercept relayed messages. It is recommended that these are toggled on by default in your deployment. If you do choose to turn these off, some of the Postman tests may fail.
 

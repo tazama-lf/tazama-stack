@@ -190,6 +190,13 @@ echo.
 set /p "confirm=Press (e) to execute, (q) to quit or any other key to go back: "
 echo.
 if "%confirm%"=="e" (
+    rem Prepare TLS before any existing containers are stopped.
+    docker compose --env-file .env --env-file secrets.env -f docker-compose.nats-tls-init.yaml -p tazama-core-tls run --rm --no-deps nats-tls-init
+    if errorlevel 1 (
+        echo NATS TLS setup failed; existing containers were not stopped.
+        pause
+        goto :addons
+    )
     echo stopping existing Tazama containers...
     echo.
     docker compose -p tazama-biar down --volumes --remove-orphans 2>nul

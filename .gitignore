@@ -19,3 +19,6 @@ backups/
 
 # Python bytecode caches (e.g. from running utils/*.py)
 __pycache__/
+
+# Locally generated NATS certificates and private keys
+core/nats/certs/
