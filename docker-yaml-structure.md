@@ -296,10 +296,9 @@ The extensions stack provides the studio tools (TCS, TRS) and Case Management Sy
 
 #### `docker-compose.extensions.infrastructure.yaml`
 Extension-specific infrastructure (Server B):
-- **`extensions-postgres`**: PostgreSQL 18 with persistent volume (port `${POSTGRESQL_CMS_PORT}:5432`, default `15433`)
+- **`extensions-postgres`**: PostgreSQL 18 with persistent volume (port `${POSTGRESQL_CMS_PORT}:5432`, default `15433`). First boot mounts `postgres/migration/01-cms-init.sql` at `/docker-entrypoint-initdb.d` to create `tazama_cms` and the empty `flowable` database
 - **`sftp`**: SFTP server `atmoz/sftp` (port `${SFTP_PORT}:22`, default `12222`) for file uploads
 - **`couchdb`**: CouchDB 3.3 (port `${COUCHDB_PORT}:5984`, default `5984`) for CMS document storage
-- **`case-management-system-migrate`**: `tazamaorg/case-management-system-migrate` one-shot migration container
 - **`flowable`**: Flowable REST BPM engine (port `${FLOWABLE_PORT}:8080`, default `8081`)
 - **`opensearch`**: OpenSearch 2.13.0 single-node (port `${OPENSEARCH_PORT:-9200}:9200`)
   - Disabled security plugin; tuned for low-write audit use case
