@@ -455,6 +455,7 @@ $Script:SecretsSsmMap = [ordered]@{
     TAZAMA_SMTP_PASS                     = '/tazama/creds/smtp/password'
     TAZAMA_S3_ACCESS_KEY                 = '/tazama/creds/ozone/s3_access_key'
     TAZAMA_S3_SECRET_KEY                 = '/tazama/creds/ozone/s3_secret'
+    TAZAMA_ORCHESTRATOR_API_KEY          = '/tazama/creds/orchestrator/api-key'
 }
 # Optional in the template (local NIFI_AUTH=none needs none of them), but AWS
 # always runs NiFi in keycloak mode (Set-NifiAuthOverlay).
