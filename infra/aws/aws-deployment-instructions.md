@@ -396,6 +396,7 @@ Rendering happens in `Set-ServerEnvOverlays` (A: `core/` and, unless `-SkipExten
 | `/tazama/creds/smtp/password` | `TAZAMA_SMTP_PASS` | extensions | no | |
 | `/tazama/creds/ozone/s3_access_key` | `TAZAMA_S3_ACCESS_KEY` | biar | yes | |
 | `/tazama/creds/ozone/s3_secret` | `TAZAMA_S3_SECRET_KEY` | biar | yes | |
+| `/tazama/creds/orchestrator/api-key` | `TAZAMA_ORCHESTRATOR_API_KEY` | biar | yes | Shared by the automation orchestrator and NiFi |
 
 Validation applied by the renderer: no single quote or line break in any value; URL-embedded keys reject whitespace and `@ : / ? # % [ ] \ "`.
 
@@ -423,7 +424,8 @@ foreach ($n in 'postgres/password', 'valkey/password', 'keycloak/admin_password'
                'nifi/keystore-password', 'nifi/truststore-password',
                'hasura/admin_secret', 'pgadmin/password',
                'flowable/password', 'opensearch/admin_password',
-               'couchdb/password', 'couchdb/cookie-secret', 'ozone/s3_secret') {
+               'couchdb/password', 'couchdb/cookie-secret', 'ozone/s3_secret',
+               'orchestrator/api-key') {
   Set-TazamaParam "/tazama/creds/$n" (New-HexSecret)
 }
 Set-TazamaParam /tazama/creds/sftp/password (New-HexSecret 7)   # 14 characters (connection-studio limit: at most 15 bytes)

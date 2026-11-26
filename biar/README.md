@@ -412,6 +412,8 @@ The `biar-nifi-init` container imports the Tazama flow from [`nifi/tazama.xml`](
 1. Open the NiFi UI: <http://localhost:8088/nifi> in `none` mode, or <https://localhost:8443/nifi> in `keycloak` mode (see [9.5](#95-nifi-authentication-modes))
 2. Edit the imported flow, or build your own, reading from the PostgreSQL databases on Server A (`SERVER_A_HOST:15432`) and Server B (`SERVER_B_HOST:15433`)
 
+**Flows imported before the orchestrator API key:** `biar-nifi-init` does not re-import a flow that already exists, so its trigger processors do not get the `x-api-key` header, and the new orchestrator rejects their requests. Before deploying it, update the existing flow in place: for every InvokeHTTP processor that calls the orchestrator's `/checksubmit` (in the Tazama flow, the 25 whose *Remote URL* is `#{phttp}`, plus any whose URL you changed to a literal address), stop it, add the property `x-api-key` with the value `${ORCHESTRATOR_API_KEY}`, and start it again. The flow and its queued data are kept.
+
 NiFi state and flow configuration are persisted in named Docker volumes (`nifi_conf`, `nifi_state`, `nifi_db`, `nifi_flowfile`, `nifi_content`, `nifi_provenance`, and `nifi_machine_identity` in `keycloak` mode). These volumes survive container restarts. They are removed by a teardown with `--volumes`.
 
 To export a configured flow for reuse, use NiFi's built-in `Download flow definition` option (right-click the process group in the canvas). Store the exported JSON in version control.
