@@ -253,7 +253,6 @@ After a successful deployment, the following interfaces are accessible from `loc
 
 #### Automation Orchestrator
 - REST API / Swagger UI: <http://localhost:7619/docs>
-- `POST /checksubmit` requires the header `x-api-key: <TAZAMA_ORCHESTRATOR_API_KEY>` (from `biar/secrets.env`). NiFi's trigger processors send it automatically.
 
 #### Datalakehouse API
 - REST API / Swagger UI: <http://localhost:8282/docs>
