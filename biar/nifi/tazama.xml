@@ -9370,6 +9370,10 @@
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -10431,6 +10435,10 @@
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -12438,6 +12446,10 @@
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -12934,6 +12946,10 @@
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -13980,6 +13996,10 @@
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -17521,6 +17541,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -18940,6 +18964,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -20778,6 +20806,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -27782,6 +27814,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -28278,6 +28314,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -30429,6 +30469,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -32429,6 +32473,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -33147,6 +33195,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -34476,6 +34528,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -36148,6 +36204,10 @@ SELECT array_agg(DISTINCT table_name) FROM information_schema.columns WHERE tabl
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -38176,6 +38236,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -39453,6 +39517,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -41517,6 +41585,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -42348,6 +42420,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -43068,6 +43144,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -43564,6 +43644,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -45379,6 +45463,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -46331,6 +46419,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                         <value>#{phttp}</value>
                     </entry>
                     <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
+                    </entry>
+                    <entry>
                         <key>disable-http2</key>
                         <value>False</value>
                     </entry>
@@ -47145,6 +47237,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
@@ -49996,6 +50092,10 @@ GROUP BY current_database(), cols.table_schema, cols.table_name, cols.column_nam
                     <entry>
                         <key>Remote URL</key>
                         <value>#{phttp}</value>
+                    </entry>
+                    <entry>
+                        <key>x-api-key</key>
+                        <value>${ORCHESTRATOR_API_KEY}</value>
                     </entry>
                     <entry>
                         <key>disable-http2</key>
