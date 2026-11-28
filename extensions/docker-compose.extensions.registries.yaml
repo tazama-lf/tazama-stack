@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# npm registry, image registry and git server for Rule Studio's rule pipeline.
+# Add this file after the extensions compose files to turn on Build & Test.
+
+services:
+  verdaccio:
+    image: verdaccio/verdaccio:6
+    container_name: verdaccio
+    restart: unless-stopped
+    environment:
+      - GITHUB_PACKAGES_TOKEN=${TAZAMA_GITHUB_PACKAGES_TOKEN:-}
+    volumes:
+      - ./registries/verdaccio/${VERDACCIO_CONFIG:-config.yaml}:/verdaccio/conf/config.yaml:ro
+      - verdaccio_storage:/verdaccio/storage
+    ports:
+      - ${VERDACCIO_PORT:-4873}:4873
+
+  image-registry:
+    image: registry:2
+    container_name: image-registry
+    restart: unless-stopped
+    volumes:
+      - image_registry_data:/var/lib/registry
+    ports:
+      - ${IMAGE_REGISTRY_PORT:-5055}:5000
+
+  gitea:
+    image: gitea/gitea:1.22
+    container_name: gitea
+    restart: unless-stopped
+    environment:
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__server__ROOT_URL=http://${SERVER_B_HOST}:${GITEA_PORT:-3300}/
+      - GITEA__service__DISABLE_REGISTRATION=true
+    volumes:
+      - gitea_data:/data
+    ports:
+      - ${GITEA_PORT:-3300}:3000
+
+  rule-studio-backend:
+    environment:
+      - RULE_PIPELINE_ENABLED=true
+      - RULE_NPM_SOURCE=mirror
+      - RULE_NPM_REGISTRY_URL=http://host.docker.internal:${VERDACCIO_PORT:-4873}
+      - IMAGE_REGISTRY=localhost:${IMAGE_REGISTRY_PORT:-5055}
+      - IMAGE_NAMESPACE=tazama
+      - IMAGE_REGISTRY_USERNAME=
+      - IMAGE_REGISTRY_TOKEN=
+      - RULE_GIT_KIND=${TRS_GIT_KIND:-none}
+      - RULE_GIT_API_URL=http://gitea:3000
+      - RULE_GIT_OWNER=tazama-rules
+      - RULE_GIT_BRANCH=staging
+      - RULE_GIT_TOKEN=${TAZAMA_TRS_GITEA_TOKEN:-}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    group_add:
+      - ${DOCKER_GID:-999}
+    security_opt:
+      - label=disable
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  verdaccio_storage:
+  image_registry_data:
+  gitea_data:
