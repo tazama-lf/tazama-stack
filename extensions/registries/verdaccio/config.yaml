@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Online: packages missing from storage are fetched from the uplinks and kept.
+storage: /verdaccio/storage/data
+plugins: /verdaccio/plugins
+
+web:
+  title: Tazama npm registry
+
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: -1
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+  github:
+    url: https://npm.pkg.github.com/
+    auth:
+      type: bearer
+      token_env: GITHUB_PACKAGES_TOKEN
+
+packages:
+  '@tazama-lf/*':
+    access: $all
+    publish: $authenticated
+    proxy: github
+  '@frmscoe/*':
+    access: $all
+    publish: $authenticated
+    proxy: github
+  '**':
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+
+log: { type: stdout, format: pretty, level: http }

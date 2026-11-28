@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Air-gapped: no uplinks, so only packages already in storage are served.
+storage: /verdaccio/storage/data
+plugins: /verdaccio/plugins
+
+web:
+  title: Tazama npm registry (offline)
+
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: -1
+
+packages:
+  '@tazama-lf/*':
+    access: $all
+    publish: $authenticated
+  '@frmscoe/*':
+    access: $all
+    publish: $authenticated
+  '**':
+    access: $all
+    publish: $authenticated
+
+log: { type: stdout, format: pretty, level: http }
